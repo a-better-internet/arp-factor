@@ -1,10 +1,22 @@
-# Kybernetes
+# Arp Factor
 
-A self-regulating feedback instrument for the browser.
+A self-regulating drone, forced through an arpeggiator's grid. It runs in the browser.
 
-You don't play notes on it. You build a closed web of generators, multipliers, tape loops and filters, set its rules, switch it on, and let it run. The system watches its own levels, spectrum and rate of change, and turns its own knobs. It pushes itself toward instability, regulates itself back, and settles into a new equilibrium. You steer it with a handful of slow controls, the way a helmsman nudges a ship.
+It combines two instruments:
 
-There are **no LFOs, no noise generators and no step sequencers**. Nothing draws a random number while the system runs. All motion comes from the web reading itself.
+* **The drone** is the Kybernetes engine: a closed web of generators, ring multipliers, a tape loop, a filter bank, a frequency shifter and a smear, all inside one feedback loop. It watches its own levels, spectrum and rate of change and turns its own knobs. It pushes itself toward instability, regulates itself back, and settles somewhere new.
+* **The grid** is the Biggie Size Meal arpeggiator: a clock with BPM, subdivision and a throttle; a chord; an order; two voices with their own registers and endpoints; a Value Menu of patterns; and MIDI export.
+
+The grid almost never plays a note. Its steps are wired into the drone instead of into pitch, through four lanes:
+
+| Lane | What a step does | What you hear |
+| --- | --- | --- |
+| **1 · Slice** | Two resonant filters (one per voice) jump to the voices' chord tones, a few octaves up. | The bed stays continuous while formants and harmonic peaks are cut out of it in time: a vowel shift that keeps tempo. |
+| **2 · Echo** | A delay's heads jump to new times, either in the chord's own frequency ratios or in multiples of the step, and its feedback rises and falls with the chord tone. | The fundamental stays put while the echoes and their tails jump between rhythmic intervals, so the space around the drone keeps changing shape. |
+| **3 · Texture** | Pushes the generators' fold, the wave shaper, the ring-multiplier depth and the exciter, then lets them relax. | The saturation breathes, tightens or blooms with the clock, and the pitch never moves. |
+| **4 · Pan** | Splits the output into 2 to 4 frequency bands and moves each band to its own place in the stereo field. | The tone stays still while the position of each part of the spectrum moves around the room in a precise pattern. |
+
+The drone itself still has no LFOs and no noise generators. The grid's random choices (random order, throttle, scatter, endpoints) come from a generator seeded by the architecture, so **the same architecture, left alone, still takes the same path.** Roll the dice for a new seed.
 
 ## Running it
 
@@ -15,6 +27,28 @@ python3 -m http.server 8000
 ```
 
 Then open <http://localhost:8000> and press **Engage**. It needs a current Chrome, Edge, Firefox or Safari.
+
+## The grid
+
+**Clock.** BPM (20 to 300) and a subdivision (1/4, 1/8, 1/8T, 1/16, 1/32) set the tick. The throttle (Thr min and max) lets a step through only every *n* ticks, with *n* drawn between the two each time. The slow Value Menu items step once every 25 to 72 ticks. With Thr max at 0, every tick is a step. The web can also keep time: **Clocked by** set to *Logic gates* makes a step whenever a gate opens or shuts, and *Breath* makes one whenever the loop starts to inhale or exhale.
+
+**Pattern.** Each voice walks a chord (the arpeggiator's fourteen chords, plus *harmonic*, the natural harmonic series from the 4th to the 11th partial). It moves up, down, up and down, in seeded random order, or in an order the web chooses: rising loop level walks up, falling level walks down, and an unusual spectrum leaps further. The endpoints (EP min and max) set how many chord tones each voice walks. They're drawn per voice whenever the chord or range changes, so the two voices drift in and out of phase. **Key: Follow the web** puts the chord on the fundamental of the harmonic series the generators lie on, and it moves with them. In **Just** tuning, chord tones are whole-number ratios (the minor seventh is the harmonic 7:4), so the slices land on the drone's own harmonics. **Envelope: Step** moves every lane at once (3 ms). **Glide** moves every lane over the Attack time, and fades the voices in on each step.
+
+**Slice.** Two state-variable filters follow voice A and voice B. *Formants* keeps only the two resonant bands. *Peaks over the bed* adds them on top of the full drone. *Resonant low-pass* sweeps two ladder-like low-passes. **Where** puts the slicer after the loop, for a crisp cut, or inside it, so every pass is carved again and the homeostat has to answer it.
+
+**Echo.** A stereo delay up to 4.4 s long, with a tone filter and a soft knee in its feedback. In *Chord ratios*, the base time is divided by the chord tone's frequency ratio, so a major triad's 4:5:6 becomes echo times of 1 : 4/5 : 2/3. In *Step multiples*, the time is one to eight steps. **Jump** heads crossfade on a raised cosine (at most 20 ms, never longer than 40% of a step). **Glide** heads bend the delay time like tape changing speed. **To loop** sends the echoes into the drone's own feedback.
+
+**Texture.** Driven by voice A's or voice B's place in the chord (bipolar), by a pulse on every step that relaxes over Decay, or by alternating ±. Negative amounts invert.
+
+**Pan.** Linkwitz-Riley crossovers split the output into 2, 3 or 4 bands, at 700 Hz, at 300 Hz and 2.4 kHz, or at 200 Hz, 800 Hz and 3.2 kHz. The lower bands pass through the allpasses of the splits above them, so the bands sum back flat (within 0.01 dB). Each band is panned at equal power, and its side signal narrows as it's thrown to one speaker. Patterns: *Orbit* (bands rotate, one revolution per Cycle steps), *Ping-pong*, *Mirror* (low and high swap sides), *Scatter* (seeded) and *Follow voice A*.
+
+**Voices and MIDI.** The arpeggiator's own two oscillators (sine, triangle, and band-limited sawtooth and square) are silent by default. Raise **Level** to hear the pattern, or **To loop** to feed it to the web. **Arm rec** records every step of both voices, and **Export .mid** writes a standard MIDI file at the grid's tempo, with voice A on channel 1 and voice B on channel 2.
+
+**The helm's Grid knob** scales every lane and the voices together, and glides like the rest of the helm. At 0% the drone runs free while the clock keeps counting.
+
+**The grid as an eye.** Two new rows in the matrix: **ARP** (voice A's place in the chord, −1 to +1) and **TICK** (a pulse on every step). Any of the drone's 22 knobs can follow the grid, and a logic gate can watch it too.
+
+**The Value Menu** loads only the clock and the pattern, so any web can take any order: Slow Arp ($0.99) to Super Fast ($2.99), plus Biggie Web ($3.49), where the web chooses the notes. As in the original, each order picks a register for each voice from the item's list. Here the pick is seeded by the order number.
 
 ## How the machine is built
 
@@ -60,6 +94,7 @@ Then open <http://localhost:8000> and press **Engage**. It needs a current Chrom
 
 | Area | What it's for |
 | --- | --- |
+| **Grid** | The arpeggiator, its four lanes, its voices and MIDI, and the Value Menu. The live view shows the last eight seconds: each voice's place in the chord, the slice frequencies, the echo time and feedback, the texture value, and each band's place in the stereo field. The switch in its header disengages it. |
 | **Helm** | The steersman's controls: Inflow, Bias (a master voltage added to every eye), Drift (global transposition), Setpoint, Coupling (matrix depth), Era and Warmth (the colour the web leans toward). Every helm move glides. The amber inner arc shows where the system actually is: on Warmth, the colour now, wherever Temper and the eyes have taken it. The output's phase portrait turns from ice to ember as the web warms. **Perturb** strikes a short burst into the loop. The regulation trace shows two minutes of loop level against the setpoint as the metabolism has moved it, with the helm's own setpoint dotted beneath. |
 | **The web** | The architecture drawn as an orrery. The loop circles the homeostat; the output's phase portrait (mid vertical, side horizontal) fills its eye. Modulation arcs glow with the voltage they carry. |
 | **Matrix** | Click a hole to place a pin. Drag a pin up or down to set its amount. Right-click inverts it, double-click removes it, and Alt-click places an inverting pin. Arrow keys, Enter, `+`, `-` and `I` work when it has focus. |
@@ -68,7 +103,7 @@ Then open <http://localhost:8000> and press **Engage**. It needs a current Chrom
 | **Chronicle** | A spectrogram of the whole run, with epochs marked above, and steering (amber), metabolism shifts (open rings) and Temper's turns (dots: ember warmer, ice colder) below. Spans of 1, 4 and 14 hours show how little of a long piece has happened yet. |
 | **Snapshots** | **Snapshot** (or <kbd>S</kbd>) keeps the current architecture and helm and flags the moment on the chronicle. Click the flag, or **Recall** in the list, to return. Recall restores the rules and the helm. The system's own memory (tape, reels, filter states) carries on, so it finds its way back rather than jumping. Snapshots are kept in the browser. |
 | **Undo** | Every finished edit is one step: a knob released, a pin placed, a stroke across the bank, a menu choice, an architecture loaded or recalled. Use the header arrows, <kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Z</kbd> and <kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Shift</kbd> <kbd>Z</kbd>. The output level isn't part of the history. |
-| **Architecture** | Every module's parameters, eight starting architectures (Hearth leans warm, Cold Lattice and Iron Weather lean cold), *Derive from a name* (the same name always builds the same web), and architecture codes you can copy and paste to share an exact web. |
+| **Architecture** | Every module's parameters, fourteen starting architectures (six made for the grid: Vowel Engine, Echo Geometry, Bloom Clock, Room Choreography, Biggie Size and The Web Plays) (Hearth leans warm, Cold Lattice and Iron Weather lean cold), *Derive from a name* (the same name always builds the same web), and architecture codes you can copy and paste to share an exact web. |
 
 **Era** stretches every slow process: band release, breath, glide, habituation, gate slew, warmth and Temper. It runs from *Weather* (seconds) through *Tide* and *Season* to *Aeon* (tens of minutes). Systems like this need hours to show what they are.
 
@@ -87,6 +122,8 @@ The signal chain is gain-staged to stay clean:
 * **A look-ahead limiter holds a −1 dBTP ceiling.** It detects true (inter-sample) peaks with 4× oversampling, and the output is linear below the ceiling.
 
 No sample can reach full scale. Every architecture peaks at or below −1 dBTP. With every control turned to its maximum at once, true peaks stay within 0.1 dB of the ceiling.
+
+**Architecture codes** start with `ARPF1.`. Codes from Kybernetes (`KYB1.`) still load, and get the default grid.
 
 **Record output** captures the finished signal straight from the engine: after the limiter, before the Level knob, at the engine's sample rate (48 kHz).
 * **Lossless:** 24-bit PCM WAV, with no codec and no resampling. In testing, a browser recording matched the engine's own output to within one 24-bit step on every sample.
@@ -118,9 +155,15 @@ node tools/render.mjs --derive andromeda --seconds 300 --at 120:bias=0.4 --at 20
 node tools/render.mjs --set loop.time=0.4 --set bank.q=14 --seconds 120 --out narrow.wav
 ```
 
+```bash
+node tools/render.mjs --preset "Vowel Engine" --set grid.bpm=96 --at 30:arch:grid.slice.where=loop --at 60:grid=0 --seconds 90 --out vowel.wav
+```
+
+The report ends with a line about the grid: how many steps it took and what each lane was set to. The grid's sawtooth and square voices have a sharp edge in every cycle, which is their timbre. The click detector reports those edges separately and doesn't count them as clicks.
+
 `--pin LOW:WARM:0.6` places a matrix pin by its codes. `--inject 20` adds synthetic steps to check the click detector. `--hold 4:441.3:1.7` puts a raw sine on reel 4 whose ends don't line up, to test loop points. `--at 30:arch:loop.time=4` changes the architecture mid-run.
 
-The engine renders at about 20× real time on one core.
+With the grid engaged, the engine renders at about 9× real time on one core.
 
 ## Files
 
@@ -129,11 +172,12 @@ index.html            the page
 styles.css            the single dark console look
 js/dsp/processor.js   the signal engine (AudioWorkletProcessor)
 js/state.js           the architecture model, presets, derivation, codes
+js/grid.js            the grid's model: chords, Value Menu, options, MIDI file writer
 js/engine.js          AudioContext, worklet, analysers, reels, microphone, recorder
 js/epochs.js          detects the system settling into and leaving stable states
 js/history.js         undo and redo
 js/recorder.js        lossless 24-bit WAV recording
 js/main.js            wiring
-js/ui/                knobs, matrix, bank, web, chronicle, regulation trace, module cards
+js/ui/                knobs, matrix, bank, web, chronicle, regulation trace, module cards, the grid panel
 tools/render.mjs      offline renderer
 ```

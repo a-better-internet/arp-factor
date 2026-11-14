@@ -119,10 +119,10 @@ export class WavRecorder {
     this.flush();
     if (this.dataBytes === 0) return null;
     const date = new Date();
-    const title = `${this.meta.title || 'Kybernetes'}${this.part > 1 || this.meta.multi ? ` · part ${this.part}` : ''}`;
+    const title = `${this.meta.title || 'Arp Factor'}${this.part > 1 || this.meta.multi ? ` · part ${this.part}` : ''}`;
     const head = wavHeader(this.sampleRate, this.dataBytes, {
       INAM: title,
-      ISFT: 'Kybernetes',
+      ISFT: 'Arp Factor',
       ICRD: date.toISOString().slice(0, 10),
       ICMT: this.meta.comment || '',
     });

@@ -6,6 +6,8 @@
  * One deliberate look: a night console for long listening, so a single dark
  * palette. Two hues carry meaning everywhere: pale phosphor blue is signal,
  * amber is regulation (clamping, inversion, the homeostat's hand).
+ * The grid brings a third: mustard (and ketchup, for voice B), the colours
+ * of the arpeggiator it came from. Wherever it shows, the clock is acting.
  */
 :root {
   color-scheme: dark;
@@ -24,6 +26,10 @@
   --regulate-deep: #8a4b1c;
   --alarm: #ff7466;
   --warm: #ffc48f;
+  --grid: #f5c518;
+  --grid-red: #ff5a47;
+  --grid-board: #a3150f;
+  --grid-board-hi: #c81d14;
 
   --f-display: "Michroma", "Eurostile", "Microgramma", "Arial Black", sans-serif;
   --f-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
@@ -407,6 +413,95 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .seg input:checked + span { background: var(--panel-2); color: var(--ink); border-color: var(--signal-deep); position: relative; z-index: 1; }
 .seg input:focus-visible + span { outline: 1.5px solid var(--signal); outline-offset: 1px; }
 
+
+/* ---------- the grid ---------- */
+
+.code--grid { color: var(--void); background: var(--grid); border-color: var(--grid); }
+.key--grid { background: var(--grid); }
+.key--red { background: var(--grid-red); }
+.readout--grid dd { color: var(--grid) !important; font-variant-numeric: tabular-nums; }
+.gridp { margin-top: var(--gap); border-top: 2px solid var(--grid); }
+.gridp.is-off { border-top-color: var(--rule-hi); }
+.gridp.is-off .gridview, .gridp.is-off .lanes { opacity: 0.55; }
+.gridp .panel__meta { font-variant-numeric: tabular-nums; }
+.switch { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; cursor: pointer; font: 500 11px/1 var(--f-ui); color: var(--dim); }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch__track { position: relative; width: 34px; height: 18px; border-radius: 9px; border: 1px solid var(--rule-hi); background: var(--void); transition: background 0.15s, border-color 0.15s; }
+.switch__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim); transition: transform 0.15s, background 0.15s; }
+.switch input:checked + .switch__track { background: color-mix(in srgb, var(--grid) 22%, var(--void)); border-color: var(--grid); }
+.switch input:checked + .switch__track::after { transform: translateX(16px); background: var(--grid); }
+.switch input:checked ~ .switch__label { color: var(--ink); }
+.switch input:focus-visible + .switch__track { outline: 1.5px solid var(--grid); outline-offset: 2px; }
+
+.gridp__top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--gap); align-items: stretch; }
+.gridview { display: grid; gap: 6px; min-width: 0; }
+.gridview__cv { width: 100%; height: 236px; display: block; background: var(--void); border: 1px solid var(--rule); }
+.gridview__key { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 400 10px/1.4 var(--f-data); color: var(--faint); }
+
+/* The Value Menu: a drive-thru board bolted into the console, on purpose. */
+.menu {
+  display: grid; gap: 8px; align-content: start;
+  padding: 12px 12px 14px;
+  background: var(--grid-board);
+  border: 3px solid var(--grid);
+  border-radius: 8px;
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.35), 0 3px 0 #5e0b07;
+  color: var(--grid);
+}
+.menu__title { font: 400 15px/1 var(--f-display); letter-spacing: 0.18em; text-align: center; color: var(--grid); text-shadow: 1px 1px 0 #5e0b07; }
+.menu__note { font-size: 11.5px; line-height: 1.4; color: color-mix(in srgb, var(--grid) 78%, var(--grid-board)); text-align: center; text-wrap: pretty; }
+.menu__items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.menu__item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-width: 0;
+  padding: 7px 9px; min-height: 34px;
+  background: #7d100b; color: var(--grid);
+  border: 1.5px solid color-mix(in srgb, var(--grid) 45%, transparent); border-radius: 5px;
+  font: 800 11px/1.1 var(--f-ui); font-variation-settings: "wdth" 110; text-transform: uppercase; letter-spacing: 0.02em;
+  cursor: pointer; text-align: left;
+}
+.menu__item:hover { background: var(--grid-board-hi); border-color: var(--grid); }
+.menu__item.is-on { background: var(--grid); color: var(--grid-board); border-color: var(--grid); }
+.menu__item:focus-visible { outline: 2px solid #fff3b0; outline-offset: 1px; }
+.menu__name { min-width: 0; overflow-wrap: anywhere; }
+.menu__price { font: 500 10px/1 var(--f-data); opacity: 0.85; flex-shrink: 0; }
+
+.lanes { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--gap); }
+.lane {
+  grid-column: span 4; min-width: 0;
+  display: grid; gap: 10px; align-content: start;
+  padding: 12px 14px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+.lane--clock { grid-column: span 4; }
+.lane--pattern { grid-column: span 8; }
+.lane--slice, .lane--echo, .lane--tex, .lane--pan { grid-column: span 6; }
+.lane--voices { grid-column: 1 / -1; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; column-gap: 18px; }
+.lane--voices .card__head, .lane--voices .card__note { grid-column: 1 / -1; }
+.lane .card__note { font-size: 12px; }
+.fields--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg--grid { margin: 0; flex-wrap: wrap; row-gap: 4px; align-items: center; }
+.seg--grid legend { float: left; width: 100%; margin-bottom: 4px; padding: 0; }
+.seg--grid input:checked + span { border-color: var(--grid); color: var(--grid); }
+.seg--grid input:focus-visible + span { outline-color: var(--grid); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-btn {
+  padding: 4px 8px; min-height: 26px;
+  border: 1px solid var(--rule-hi); border-radius: var(--r);
+  background: transparent; color: var(--dim);
+  font: 400 10.5px/1 var(--f-data); cursor: pointer;
+}
+.chip-btn:hover { border-color: var(--grid); color: var(--ink); }
+.chip-btn[aria-pressed="true"] { background: var(--grid); border-color: var(--grid); color: var(--void); }
+.pattern__foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.dice { display: flex; align-items: center; gap: 8px; }
+.dice .live { margin-left: 0; }
+.midi { display: grid; gap: 8px; align-content: start; }
+.midi .live { margin-left: 0; text-align: left; }
+.btn.is-rec { border-color: var(--grid-red); color: var(--grid-red); }
+.helm__knobs .knob--grid .knob__arc { stroke: var(--grid); }
+
 /* ---------- architecture ---------- */
 
 .arch { display: grid; gap: var(--gap); margin-top: 24px; }
@@ -654,4 +749,20 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+}
+
+@media (max-width: 1280px) {
+  .lane--clock, .lane--pattern { grid-column: span 6; }
+  .lane--voices { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 980px) {
+  .gridp__top { grid-template-columns: minmax(0, 1fr); }
+  .lane, .lane--clock, .lane--pattern, .lane--slice, .lane--echo, .lane--tex, .lane--pan { grid-column: 1 / -1; }
+  .lane--voices { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .readout--grid { display: none; }
+  .fields--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gridview__cv { height: 220px; }
+  .switch__label { display: none; }
 }

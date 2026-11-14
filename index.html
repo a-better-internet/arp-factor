@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Kybernetes</title>
+<title>Arp Factor</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="A self-regulating feedback instrument for the browser. Design a closed web of generators, multipliers and feedback, then steer it.">
+<meta name="description" content="A self-regulating drone forced through an arpeggiator’s grid. The arpeggiator’s steps carve, echo, colour and throw the drone around instead of playing notes.">
 <meta name="theme-color" content="#07090f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,13 +17,14 @@
 <header class="bar">
   <div class="bar__in">
     <div class="mark">
-      <h1 class="mark__word">Kybernetes</h1>
-      <p class="mark__sub">self-regulating feedback instrument</p>
+      <h1 class="mark__word">Arp Factor</h1>
+      <p class="mark__sub">a self-regulating drone, forced through a grid</p>
     </div>
     <dl class="readouts">
       <div class="readout"><dt>State</dt><dd id="state-chip" class="chip">Ready</dd></div>
       <div class="readout"><dt>Elapsed</dt><dd id="elapsed" class="readout__big">00:00:00</dd></div>
       <div class="readout"><dt>Epoch</dt><dd id="epoch">—</dd></div>
+      <div class="readout readout--grid"><dt>Grid</dt><dd id="grid-read">— · —</dd></div>
       <div class="readout readout--era"><dt>Era</dt><dd id="era-read">×2.0 Tide</dd></div>
     </dl>
     <div class="bar__actions">
@@ -39,7 +40,7 @@
 </header>
 
 <main class="page">
-  <p class="lede">Wire a web of generators, multipliers and feedback, close the loop, and let it run. The system watches its own levels and turns its own knobs; you design the rules and steer. <span class="lede__rule">No LFOs. No noise sources. No sequencers. Every movement is emergent.</span></p>
+  <p class="lede">A drone that regulates itself, and an arpeggiator that never plays a note. The web of generators, multipliers and feedback keeps its own balance; the grid’s steps carve formants out of it, make its echoes jump, make its saturation pulse and throw its bands across the room. <span class="lede__rule">Something timeless, forced through a rhythmic grid.</span></p>
 
   <div class="console">
     <section class="panel helm" aria-labelledby="helm-h">
@@ -75,12 +76,32 @@
     <section class="panel matrix" aria-labelledby="matrix-h">
       <header class="panel__head">
         <span class="code">M</span><h2 class="panel__title" id="matrix-h">Matrix</h2>
-        <span class="panel__meta">14 eyes × 22 knobs</span>
+        <span class="panel__meta">16 eyes × 22 knobs</span>
       </header>
       <canvas id="matrix" class="matrix__cv"></canvas>
       <div class="inspector" id="matrix-inspector" aria-live="polite"></div>
     </section>
   </div>
+
+  <section class="panel gridp" aria-labelledby="grid-h">
+    <header class="panel__head">
+      <span class="code code--grid">#</span><h2 class="panel__title" id="grid-h">Grid</h2>
+      <span class="panel__meta" id="grid-meta"></span>
+      <label class="switch" for="grid-on"><input type="checkbox" id="grid-on" role="switch"><span class="switch__track" aria-hidden="true"></span><span class="switch__label">Grid engaged</span></label>
+    </header>
+    <div class="gridp__top">
+      <figure class="gridview">
+        <canvas id="gridview" class="gridview__cv" role="img" aria-label="The last eight seconds of the grid: each voice’s place in the chord, the slice filters’ frequencies, the echo time and feedback, the texture pulse and where each band sits in the stereo field"></canvas>
+        <figcaption class="gridview__key"><span><i class="key key--signal"></i>voice A</span><span><i class="key key--red"></i>voice B</span><span><i class="key key--grid"></i>echo time, texture</span><span><i class="key key--regulate"></i>echo feedback</span><span>pan: one line per band, lowest pale</span></figcaption>
+      </figure>
+      <div class="menu" aria-labelledby="menu-h">
+        <h3 class="menu__title" id="menu-h">★ Value Menu ★</h3>
+        <p class="menu__note">Arpeggiator orders. Each one changes the clock and the pattern only; the drone keeps going.</p>
+        <div class="menu__items" id="value-menu"></div>
+      </div>
+    </div>
+    <div class="lanes" id="grid-lanes"></div>
+  </section>
 
   <div class="row">
     <section class="panel bankp" aria-labelledby="bank-h">
@@ -135,7 +156,7 @@
   <section class="arch" aria-labelledby="arch-h">
     <header class="arch__head">
       <h2 class="arch__title" id="arch-h">Architecture</h2>
-      <p class="arch__lede">The composer’s part: what the web is made of and how it is wired. Changes apply to the running system as they happen.</p>
+      <p class="arch__lede">The composer’s part: what the drone is made of and how it is wired. Changes apply to the running system as they happen. Architectures include the grid; the Value Menu above changes only its clock and pattern.</p>
     </header>
     <div class="toolbar">
       <div class="toolbar__group">
@@ -159,7 +180,7 @@
       </div>
       <div class="toolbar__row" id="arch-code-row" hidden>
         <label class="sr-only" for="arch-code">Architecture code</label>
-        <textarea id="arch-code" class="input input--code" rows="3" spellcheck="false" placeholder="Paste a code starting with KYB1."></textarea>
+        <textarea id="arch-code" class="input input--code" rows="3" spellcheck="false" placeholder="Paste a code starting with ARPF1. (or KYB1.)"></textarea>
         <div class="btns">
           <button type="button" class="btn" id="arch-apply">Apply code</button>
           <button type="button" class="btn btn--quiet" id="arch-code-close">Close</button>
@@ -179,7 +200,13 @@
   <section class="guide" aria-labelledby="guide-h">
     <h2 class="arch__title" id="guide-h">How the machine works</h2>
     <dl class="guide__list">
-      <div><dt>The architect</dt><dd>You do not play notes. You design a web of modules and the rules that connect them, then switch it on. The music is whatever the web does.</dd></div>
+      <div><dt>The architect</dt><dd>You do not play notes. You design a web of modules and the rules that connect them, then switch it on. The music is whatever the web does, and the grid is how it keeps time.</dd></div>
+      <div><dt>The grid</dt><dd>A two-voice arpeggiator: a clock, a chord, an order, and endpoints that decide how many chord tones each voice walks. Its steps are wired into the drone instead of into pitch, through four lanes. The helm’s Grid knob sets how hard all four act, and glides like the rest of the helm.</dd></div>
+      <div><dt>1 · Slice</dt><dd>Two resonant filters jump to the voices’ chord tones, a few octaves up. The bed stays continuous; the filters cut shifting formants and harmonic peaks out of it in time with the clock. Followed to the web’s fundamental in just intonation, they land on the drone’s own harmonics.</dd></div>
+      <div><dt>2 · Echo</dt><dd>A delay whose heads jump with every step, to times in the chord’s own ratios or to multiples of the step, and whose feedback rises and falls with them. Crossfaded jumps keep it clean; gliding heads bend the echoes like tape. Its repeats can be sent into the drone’s loop.</dd></div>
+      <div><dt>3 · Texture</dt><dd>Each step pushes the generators’ fold, the wave shaper, the ring multipliers and the exciter, then lets them relax. The harmonic saturation breathes, tightens or blooms with the clock, and the pitch never moves.</dd></div>
+      <div><dt>4 · Pan</dt><dd>The output is split into two to four frequency bands, and each band is thrown to its own place in the stereo field on every step: orbiting, ping-ponging, mirrored, scattered or following voice A. The tone stays put; its place in the room dances.</dd></div>
+      <div><dt>Who keeps time</dt><dd>The grid can run on a tempo, or the web can clock it: a step whenever a logic gate opens or shuts, or whenever the loop breathes in or out. In the web’s own order, rising loop level walks up the chord and falling walks down. The grid is an eye too: ARP and TICK in the matrix let its steps turn any knob of the drone.</dd></div>
       <div><dt>A closed loop</dt><dd>There are no open ends. The loop’s output returns to the tape, to the last multiplier and to the generators’ phase, and reels record the output back into the system.</dd></div>
       <div><dt>Multiplication, not addition</dt><dd>Four ring multipliers run in series. A product cancels the frequencies that went in and leaves their sums and differences, so one small change shatters into many sidebands.</dd></div>
       <div><dt>Multiplied feedback</dt><dd>Inside the loop sit a tape delay, a bank of third-octave filters, a single-sideband frequency shifter, an exciter, a two-voice harmonizer and a smearing reverberator. Every pass is re-carved, re-pitched, given new harmonics, harmonized at just intervals and smeared.</dd></div>
@@ -187,17 +214,17 @@
       <div><dt>Homeostasis</dt><dd>Every band has an inverted VCA that holds it down when it rises too far above its share and lets go slowly. The loop as a whole inhales toward the setpoint and exhales past it, so it reaches the brink, saves itself and grows back changed.</dd></div>
       <div><dt>Metabolism</dt><dd>A slower regulator watches the breathing itself. When the breaths start keeping time like a clock, or their pace stops changing for the better part of an hour, it shifts the setpoint, breath depth and ceiling. It keeps a direction while that makes the breathing more varied, and reads a new one off the eyes when it does not.</dd></div>
       <div><dt>Colour</dt><dd>Warmth runs from cold and metallic, where clashing products ring like struck metal, to warm, where the generators settle into one harmonic series, multiply more gently and soften on top. Temper keeps the colour from standing still: when the web has held one colour for a while it leans the other way, deeply or barely, depending on what the eyes see at that moment.</dd></div>
-      <div><dt>No predictable tools</dt><dd>There are no LFOs, no noise generators and no step sequencers. Rhythm and events come from oscillators pulling toward shared ratios, gates flipping and loops fighting for stability.</dd></div>
+      <div><dt>Loaded dice</dt><dd>The drone has no LFOs and no noise generators: its own motion comes from oscillators pulling toward shared ratios, gates flipping and loops fighting for stability. The grid’s random choices are seeded by the architecture, so the same architecture, left alone, still takes the same path. Roll the dice for a new one.</dd></div>
       <div><dt>Tapes and logic</dt><dd>Reels hold concrete material: the system’s own past, or a sound you load. Logic gates compare what the eyes see and decide when reels record and which come up in the mix.</dd></div>
       <div><dt>Cosmic time</dt><dd>Era stretches every slow process, from weather (seconds) to aeons (tens of minutes). Glide keeps pitch from rising and falling: generator pitch, tape speed and the bank’s sweeps all drift at its pace, and held ratios keep the beating between generators steady rather than speeding up and slowing down. Systems like this need hours to show what they are. The chronicle keeps the whole run.</dd></div>
-      <div><dt>The steersman</dt><dd>The helm nudges: inflow, bias, drift, setpoint, coupling, era, warmth. Every move glides, so you push the system out of one equilibrium and watch it organise itself into another.</dd></div>
+      <div><dt>The steersman</dt><dd>The helm nudges: inflow, bias, drift, setpoint, coupling, era, warmth and grid. Every move glides, so you push the system out of one equilibrium and watch it organise itself into another.</dd></div>
     </dl>
   </section>
 </main>
 
 <footer class="foot">
   <p><kbd>Space</kbd> engage or halt · <kbd>P</kbd> perturb · <kbd>S</kbd> snapshot · <kbd>Ctrl</kbd> <kbd>Z</kbd> undo · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> redo · Knobs: drag, arrow keys, or scroll while focused · double-click resets</p>
-  <p>Nothing in this instrument draws a random number while it runs. The same architecture, left alone, takes the same path.</p>
+  <p>The grid’s dice are seeded by the architecture: the same architecture, left alone, takes the same path. Drone engine after Kybernetes; arpeggiator after the Biggie Size Meal.</p>
 </footer>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

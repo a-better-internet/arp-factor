@@ -88,6 +88,7 @@ export function describe(path, label) {
     case 'gates': return `Gate L${n(1)} ${label}`;
     case 'reels': return `Reel R${n(1)} ${label}`;
     case 'out': return `Output ${label}`;
+    case 'grid': return label ? `Grid ${label}` : 'Grid';
     default: return label || path;
   }
 }

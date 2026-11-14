@@ -63,6 +63,7 @@ export class Observatory {
       p.m4 = [gx + step * 3.6, h * 0.72];
       for (let i = 0; i < 4; i++) p[`l${i + 1}`] = [w * (0.2 + 0.06 * i), h * 0.085];
       for (let i = 0; i < 4; i++) p[`r${i + 1}`] = [w * (0.2 + 0.065 * i), h * 0.9];
+      p.grid = [Math.min(w - 40, cx + R + w * 0.14), cy - R * 1.05];
     } else {
       const cx = w * 0.5, cy = h * 0.56, R = Math.min(w * 0.25, h * 0.2);
       this.C = [cx, cy]; this.R = R;
@@ -75,6 +76,7 @@ export class Observatory {
       p.m4 = [Math.max(24, p.tape[0] - w * 0.1), cy - R * 0.9];
       for (let i = 0; i < 4; i++) p[`l${i + 1}`] = [w * (0.07 + 0.1 * i), h * 0.89];
       for (let i = 0; i < 4; i++) p[`r${i + 1}`] = [w * (0.6 + 0.1 * i), h * 0.89];
+      p.grid = [w * 0.88, cy - R * 1.25];
     }
     p.homeo = this.C;
     p.reels = GROUPS.reels.map((k) => p[k]).reduce((a, b) => [a[0] + b[0] / 4, a[1] + b[1] / 4], [0, 0]);
@@ -238,6 +240,27 @@ export class Observatory {
       }
     }
 
+    // the grid's lanes: into the generators (texture), the bank (slice inside
+    // the loop) and the output (slice, echo, pan), flashing on every step
+    {
+      const g = frame?.grid, A = a.grid;
+      if (A && A.on) {
+        const tick = g ? g[11] : 0, amt = g ? g[16] : a.helm.grid ?? 0.8;
+        const from = p.grid;
+        const to = [p.out, A.slice.where === 'loop' ? p.bank : null, p.g1, p.g2, p.g3, p.g4].filter(Boolean);
+        ctx.setLineDash([2, 5]);
+        ctx.strokeStyle = rgba(theme.grid, (0.12 + 0.55 * tick) * (0.3 + 0.7 * amt));
+        ctx.lineWidth = 0.75 + tick * 1.25;
+        for (const t of to) {
+          const mx = (from[0] + t[0]) / 2, my = (from[1] + t[1]) / 2;
+          const qx = mx + (cx - mx) * 0.3, qy = my + (cy - my) * 0.3 - 20;
+          ctx.beginPath(); ctx.moveTo(from[0], from[1]); ctx.quadraticCurveTo(qx, qy, t[0], t[1]); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+      }
+    }
+
     // nodes
     ctx.font = `500 9px ${theme.fData}`;
     ctx.textBaseline = 'middle';
@@ -283,6 +306,11 @@ export class Observatory {
     node('harm', 'HARM', 6, { align: 'left', sub: `${a.harm.a > 0 ? '+' : a.harm.a < 0 ? '−' : ''}${Math.abs(a.harm.a)} ${a.harm.b > 0 ? '+' : a.harm.b < 0 ? '−' : ''}${Math.abs(a.harm.b)} · ${Math.round(a.harm.mix * 100)}%` });
     node('smear', 'SMEAR', 9, { align: 'left', sub: frame ? `loop ${frame.stat[0].toFixed(0)} dB` : '' });
     node('out', 'OUT', 8, { align: 'center', sub: frame ? `${frame.stat[1].toFixed(0)} dB` : '' });
+    {
+      const A = a.grid, g = frame?.grid;
+      const sub = !A || !A.on ? 'off' : A.clock === 'tempo' ? `${Math.round(A.bpm)} bpm` : A.clock;
+      node('grid', 'GRID', 8, { align: 'center', color: theme.grid, lamp: A && A.on ? 0.15 + (g ? g[11] : 0) * 0.85 : 0.05, sub });
+    }
     for (let i = 0; i < 4; i++) {
       const open = frame ? frame.gateState[i] : 0;
       node(`l${i + 1}`, `L${i + 1}`, 5, { lamp: frame ? 0.15 + frame.gates[i] * 0.85 : 0.1, align: 'center', sub: open ? 'open' : 'shut' });

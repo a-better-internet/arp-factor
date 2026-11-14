@@ -1,8 +1,9 @@
 /*
- * Kybernetes: wiring. The page holds one architecture (the web and its
+ * Arp Factor: wiring. The page holds one architecture (the web and its
  * initial conditions), hands it to the signal engine, and draws what the
  * engine reports. The helm is the steersman's: a few slow controls that
- * nudge the running system from one equilibrium toward another.
+ * nudge the running system from one equilibrium toward another. The grid
+ * is the arpeggiator that forces it all through time.
  */
 import { Engine } from './engine.js';
 import { PRESETS, defaultArch, deriveArch, normalizeArch, encodeArch, decodeArch, SOURCES, DESTS, eraName } from './state.js';
@@ -13,12 +14,13 @@ import { Observatory } from './ui/observatory.js';
 import { Chronicle } from './ui/chronicle.js';
 import { Trace } from './ui/trace.js';
 import { buildArchitecture } from './ui/architect.js';
+import { buildGrid } from './ui/grid.js';
 import { EpochWatch, roman } from './epochs.js';
 import { readTheme } from './ui/theme.js';
 import { History, describe } from './history.js';
 
-const STORE_KEY = 'kybernetes.architecture.v1';
-const SNAP_KEY = 'kybernetes.snapshots.v1';
+const STORE_KEY = 'arpfactor.architecture.v1';
+const SNAP_KEY = 'arpfactor.snapshots.v1';
 const $ = (sel) => document.querySelector(sel);
 
 readTheme();
@@ -105,8 +107,9 @@ const HELM = [
   { key: 'coupling', label: 'Coupling', min: 0, max: 2, format: fmt.x, title: 'How strongly every eye turns every knob' },
   { key: 'era', label: 'Era', min: 0.25, max: 64, curve: 'log', format: (v) => `×${v < 1 ? v.toFixed(2) : v.toFixed(1)} ${eraName(v)}`, title: 'Stretches every slow process: release, breath, glide, habituation' },
   { key: 'warmth', label: 'Warmth', min: 0, max: 1, format: fmt.pct, title: 'The colour the web leans toward: cold and metallic at 0%, settled into one warm harmonic series at 100%. Temper wanders around it; the amber arc shows the colour now.' },
+  { key: 'grid', label: 'Grid', min: 0, max: 1, format: fmt.pct, title: 'How hard the grid forces the drone: every lane, and the arpeggiator’s own voices, scaled together. 0% lets the drone run free; the clock keeps counting.' },
 ];
-const HELM_INDEX = { inflow: 0, bias: 1, drift: 2, setpoint: 3, coupling: 4, era: 5, volume: 6, warmth: 7 };
+const HELM_INDEX = { inflow: 0, bias: 1, drift: 2, setpoint: 3, coupling: 4, era: 5, volume: 6, warmth: 7, grid: 8 };
 const helmKnobs = {};
 const helmDefaults = defaultArch().helm;
 
@@ -134,7 +137,7 @@ for (const def of HELM) {
     onCommit: (v) => helmCommitted(def, v),
   });
   helmKnobs[def.key] = k;
-  if (def.key === 'warmth') k.el.classList.add('knob--row');
+  if (def.key === 'grid') k.el.classList.add('knob--grid');
   helmGrid.append(k.el);
 }
 const volDef = { key: 'volume', label: 'Level', min: 0, max: 1, format: fmt.pct };
@@ -168,12 +171,19 @@ const watch = new EpochWatch();
 
 function syncAll() {
   architecture.sync();
+  gridUI.sync();
   for (const [key, k] of Object.entries(helmKnobs)) k.set(arch.helm[key], { silent: true });
   updateEra();
   $('#arch-name').textContent = arch.name;
 }
 const architecture = buildArchitecture($('#cards'), { getArch, changed, engine, notify, syncAll: () => syncAll() });
 architecture.sync();
+const gridRead = $('#grid-read');
+const gridUI = buildGrid($('.gridp'), {
+  getArch, changed, notify, syncAll: () => syncAll(), elapsed: () => elapsed,
+  onNotes: (a, b) => { gridRead.textContent = `${a} · ${b}`; },
+});
+gridUI.sync();
 $('#arch-name').textContent = arch.name;
 
 /* ---------- undo and redo ---------- */
@@ -311,6 +321,7 @@ engine.addEventListener('frame', (e) => {
   elapsed = frame.el;
   chronicle.push(frame);
   trace.push(frame);
+  gridUI.update(frame);
   const ev = watch.update(frame);
   if (ev) {
     log(ev.text, 'epoch');
@@ -380,6 +391,7 @@ function draw() {
   bank.draw(frame);
   trace.draw(arch.helm.setpoint);
   chronicle.draw();
+  gridUI.view.draw();
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
@@ -455,6 +467,7 @@ $('#reset-go').addEventListener('click', () => {
   chronicle.reset();
   trace.reset();
   watch.reset();
+  gridUI.view.reset();
   elapsed = 0;
   $('#elapsed').textContent = clock(0);
   $('#epoch').textContent = '—';
@@ -535,7 +548,7 @@ if (previousArch) {
   snaps.push({ id: `s${Date.now()}`, n, t: 0, run: 'earlier', epoch: '', note: 'before the steadier defaults', arch: previousArch });
   saveSnaps();
   save();
-  setTimeout(() => notify(`Kybernetes has new, steadier defaults. Your previous architecture is kept as snapshot S${n}; Recall brings it back.`), 600);
+  setTimeout(() => notify(`Arp Factor has new, steadier defaults. Your previous architecture is kept as snapshot S${n}; Recall brings it back.`), 600);
 }
 renderSnaps();
 
@@ -588,10 +601,10 @@ recBtn.addEventListener('click', async () => {
     return;
   }
   if (!engine.running) { notify('Engage the system before recording.', 'error'); return; }
-  recName = `kybernetes-${arch.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}`;
+  recName = `arp-factor-${arch.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}`;
   recFiles.replaceChildren();
   engine.startRecording({
-    title: `Kybernetes · ${arch.name}`,
+    title: `Arp Factor · ${arch.name}`,
     comment: `Architecture code: ${encodeArch(arch)}`,
   });
   recBtn.textContent = 'Stop recording';
