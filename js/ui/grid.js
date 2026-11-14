@@ -7,7 +7,7 @@ import { Knob, fmt } from './knob.js';
 import { getPath, setPath } from '../state.js';
 import {
   defaultGrid, CHORD_NAMES, SUBDIVS, CLOCKS, MODES, KEYS, TUNINGS, ENVS, WAVES, SLICE_MODES, SLICE_WHERE,
-  ECHO_MAPS, ECHO_HEADS, VOICE_SEL, TEX_SOURCES, PAN_PATTERNS, VALUE_MENU, orderFromMenu, tickMs, subdivLabel, buildMidiFile,
+  ECHO_MAPS, ECHO_HEADS, VOICE_SEL, TEX_SOURCES, PAN_PATTERNS, VALUE_MENU, HARM_FOLLOW, STRIKE_ON, TAPE_TIME, orderFromMenu, tickMs, subdivLabel, buildMidiFile,
 } from '../grid.js';
 import { theme, rgba, fit } from './theme.js';
 
@@ -62,7 +62,7 @@ export function buildGrid(root, api) {
     for (const o of options) s.append(h('option', { value: String(o.id), text: o.label }));
     s.addEventListener('change', () => {
       const cur = getPath(getArch(), full);
-      setPath(getArch(), full, typeof cur === 'number' ? +s.value : s.value);
+      setPath(getArch(), full, typeof cur === 'number' ? +s.value : typeof cur === 'boolean' ? s.value === 'true' : s.value);
       changed(full, true, label.toLowerCase());
       refreshMeta();
     });
@@ -129,6 +129,7 @@ export function buildGrid(root, api) {
       for (const x of live.menuBtns) x.classList.remove('is-on');
       b.classList.add('is-on');
       notify(`Order up: ${p.name}, $${p.price}. The clock and pattern change; the drone and the lanes stay as they are.`);
+      api.mark?.(p.name);
     });
     menu.append(b);
     return b;
@@ -147,7 +148,7 @@ export function buildGrid(root, api) {
   const chordRow = h('div', { class: 'chips', role: 'group', 'aria-label': 'Chord' });
   const chips = CHORD_NAMES.map((c) => {
     const b = h('button', { type: 'button', class: 'chip-btn', text: c, 'aria-pressed': 'false' });
-    b.addEventListener('click', () => { G().chord = c; changed('grid.chord', true, 'chord'); syncChips(); });
+    b.addEventListener('click', () => { G().chord = c; changed('grid.chord', true, 'chord'); syncChips(); api.mark?.(c); });
     chordRow.append(b);
     return b;
   });
@@ -174,6 +175,20 @@ export function buildGrid(root, api) {
       knob('epMax', { label: 'EP max', min: 0, max: 8, step: 1, format: (v) => (v > 0 ? `${v}` : 'all'), title: 'Endpoints: the most chord tones a voice walks. 0 walks the whole chord.' }),
       knob('attack', { label: 'Attack', min: 0.001, max: 2, curve: 'log', format: fmt.sec, title: 'In Glide, how long every lane takes to reach its step (and the voices to fade in)' })),
     h('div', { class: 'pattern__foot' }, seg('env', 'Envelope', ENVS), h('div', { class: 'dice' }, dice, seedOut)));
+
+  /* ---- into the drone: what the arpeggiator tells the web itself ---- */
+  live.inform = h('p', { class: 'card__live card__live--grid', text: 'Engage to hear the grid inform the drone.' });
+  const inform = lane('inform', '⇄', 'Into the drone', 'The arpeggiator does not only act on the drone from outside; it informs the web itself. Its chord retunes the generators, which glide to the nearest chord tones as the chord changes. Its chord tones lead the harmonizer inside the loop. Its tempo sets the length of the tape loop and the self-recording reels, so every pass comes round on the beat. And its steps can pluck a chord tone into the loop, where the feedback lets it ring on.',
+    h('div', { class: 'inform' },
+      h('div', { class: 'knobs knobs--row' },
+        knob('inform.tune', { label: 'Tune', min: 0, max: 1, format: fmt.pct, title: 'How far the generators settle onto the grid’s chord (at the glide’s pace)' }),
+        knob('inform.harmMix', { label: 'Harmonize', min: 0, max: 0.9, format: fmt.pct, title: 'How much harmonizer the grid adds to the loop' }),
+        knob('inform.strike', { label: 'Strike', min: 0, max: 1, format: fmt.pct, title: 'How hard each step plucks voice A’s chord tone into the loop' })),
+      h('div', { class: 'fields fields--3' },
+        select('inform.harm', 'Harmonizer sings', HARM_FOLLOW, 'Its own intervals (set in Shaper, exciter, harmonizer), the chord, or the two voices as they move'),
+        select('inform.tape', 'Tape and reels', TAPE_TIME, 'In time: the loop’s tape takes the nearest musical length at the grid’s tempo, the right head a rhythmic relation to the left, and self-recording reels a whole number of beats'),
+        select('inform.strikeOn', 'Strike on', STRIKE_ON))),
+    live.inform);
 
   /* ---- the four lanes ---- */
   const slice = lane('slice', '1', 'Slice', 'Harmonic slicing. Two resonant filters jump to the voices’ chord tones a few octaves up and carve formants out of the continuous bed: a vowel shift that keeps time. Inside the loop, every pass is carved again.',
@@ -222,7 +237,7 @@ export function buildGrid(root, api) {
     h('div', { class: 'fields' }, select('voices.wave', 'Wave', WAVES)),
     h('div', { class: 'midi' }, h('div', { class: 'btns' }, midiArm, midiSave, midiClear), midiInfo));
 
-  root.querySelector('#grid-lanes').append(clock, pattern, slice, echo, tex, pan, voices);
+  root.querySelector('#grid-lanes').append(clock, pattern, inform, slice, echo, tex, pan, voices);
 
   /* ---- MIDI recording ---- */
   const midi = { armed: false, events: [], last: [null, null] };
@@ -259,6 +274,17 @@ export function buildGrid(root, api) {
     update(frame) {
       if (!frame.grid) return;
       view.push(frame);
+      const g = frame.grid;
+      if (g.length > 27) {
+        const I = G().inform, beat = 60 / G().bpm;
+        const ratio = (r) => { for (let q = 1; q <= 8; q++) { const n = Math.round(r * q); if (Math.abs(n / q - r) < 0.004) return `${n}:${q}`; } return `×${r.toFixed(3)}`; };
+        const parts = [];
+        parts.push(I.tune > 0 ? `generators ${Math.round(g[23] * 100)}% on the chord` : 'generators free');
+        parts.push(I.tape ? `tape ${fmt.sec(g[24])} = ${+(g[24] / beat).toFixed(2)} beats` : `tape free, ${fmt.sec(g[24])}`);
+        parts.push(I.harm === 'off' ? 'harmonizer on its own intervals' : `harmonizer ${ratio(g[25])} and ${ratio(g[26])}`);
+        if (I.strike > 0) parts.push(g[27] > 0.05 ? 'strike ●' : 'strike ○');
+        live.inform.textContent = parts.join(' · ');
+      }
       const st = frame.steps;
       if (st && st.length) {
         for (let i = 0; i < st.length; i += 5) {
@@ -270,7 +296,7 @@ export function buildGrid(root, api) {
         }
         if (midi.armed) midiText();
         const n = st.length - 5;
-        api.onNotes?.(noteName(st[n + 1]), noteName(st[n + 2]));
+        api.onNotes?.(noteName(st[n + 1]), noteName(st[n + 2]), st[n + 3], st[n + 4], frame.grid[4], frame.grid[5]);
       }
     },
   };
@@ -330,6 +356,9 @@ class GridView {
       ctx.textAlign = 'left';
       ctx.fillText(rows[r][0], 2, ry + rh / 2);
     }
+    // everything time-based stays inside the plot
+    ctx.save();
+    ctx.beginPath(); ctx.rect(LW + 1, 0, w - LW - 6, hh); ctx.clip();
     // step lines
     ctx.strokeStyle = rgba(theme.grid, 0.13);
     ctx.beginPath();
@@ -373,6 +402,7 @@ class GridView {
     trace(3, (f) => f.tex, theme.grid, -1, 1);
     const panCols = [theme.signal, theme.grid, theme.regulate, theme['grid-red']];
     for (let g = 0; g < 4; g++) trace(4, (f) => (g < f.n ? f.pan[g] * f.depth : NaN), panCols[g], -1, 1, false, 0.9);
+    ctx.restore();
     // readouts at the right edge
     if (this.last) {
       const g = this.last;

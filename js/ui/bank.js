@@ -1,11 +1,12 @@
 /*
- * The third-octave bank. Pale columns are band energy after carving; amber
+ * The third-octave bank. Pale columns are band energy after carving; violet
  * from the top is how far each band's inverted VCA is holding it down. The
  * line with handles is the carving curve you draw; the dotted line is that
  * curve as the system is currently bending it (tilt and rotation).
  */
 import { theme, rgba, fit, dprOf } from './theme.js';
 import { BAND_HZ, BAND_LABELS } from '../state.js';
+import { CHORDS } from '../grid.js';
 
 const NB = 24;
 
@@ -116,6 +117,45 @@ export class Bank {
       ctx.fillStyle = k === this.hover ? theme.ink : theme.panel;
       ctx.strokeStyle = theme.ink;
       ctx.beginPath(); ctx.arc(x, y, k === this.hover ? 3.5 : 2.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+
+    // the grid on the spectrum: its two slice filters, the chord's tones
+    // along the floor, and where the pan splits the bands
+    if (frame && frame.grid && frame.grid[0] > 0) {
+      const G = frame.grid, A = this.getArch().grid;
+      const xOf = (f) => g.padL + (3 * Math.log2(f / 63) + 0.5) * g.col;
+      const inX = (x) => x >= g.padL && x <= g.padL + g.plotW;
+      const tick = G[11], amt = G[16];
+      // chord tones: every octave of the chord the generators are pulled to
+      const root = A.key >= 0 ? 440 * Math.pow(2, (60 + A.key - 69) / 12) : G[22] > 0 ? G[22] : 55;
+      ctx.fillStyle = rgba(theme.grid, 0.55 * (0.4 + 0.6 * amt));
+      for (const c of (CHORDS[A.chord] || [])) {
+        for (let o = -4; o < 10; o++) {
+          const x = xOf(root * Math.pow(2, c / 12 + o));
+          if (inX(x)) ctx.fillRect(x - 0.5, g.padT + g.plotH - 5, 1, 5);
+        }
+      }
+      // pan splits
+      const split = [[700], [300, 2400], [200, 800, 3200]][Math.round(G[20]) - 2] || [];
+      ctx.setLineDash([2, 4]);
+      ctx.strokeStyle = rgba(theme.grid, 0.25 * amt * (A.pan.depth > 0 ? 1 : 0.3));
+      for (const f of split) { const x = Math.round(xOf(f)) + 0.5; ctx.beginPath(); ctx.moveTo(x, g.padT); ctx.lineTo(x, g.padT + g.plotH); ctx.stroke(); }
+      ctx.setLineDash([]);
+      // the two slice filters, glowing on each step
+      if (A.slice.mix > 0) {
+        for (const [f, col] of [[G[6], theme.signal], [G[7], theme['grid-red']]]) {
+          const x = xOf(f);
+          if (!inX(x)) continue;
+          const grad = ctx.createLinearGradient(x - 10, 0, x + 10, 0);
+          grad.addColorStop(0, rgba(col, 0));
+          grad.addColorStop(0.5, rgba(col, (0.12 + 0.3 * tick) * A.slice.mix * amt));
+          grad.addColorStop(1, rgba(col, 0));
+          ctx.fillStyle = grad;
+          ctx.fillRect(x - 10, g.padT, 20, g.plotH);
+          ctx.fillStyle = rgba(col, 0.5 + 0.5 * tick);
+          ctx.fillRect(x - 0.75, g.padT, 1.5, g.plotH);
+        }
+      }
     }
 
     // frequency labels

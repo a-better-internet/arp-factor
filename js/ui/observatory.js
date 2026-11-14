@@ -240,22 +240,54 @@ export class Observatory {
       }
     }
 
-    // the grid's lanes: into the generators (texture), the bank (slice inside
-    // the loop) and the output (slice, echo, pan), flashing on every step
+    // the grid inside the web. Two rings between the orbit and the eye: each
+    // voice's walk of the chord, the tone it is on lit. Then the grid's hands
+    // on the drone: the chord tuning the generators, the chord leading the
+    // harmonizer, the tempo setting the tape, and the lanes on the output.
     {
       const g = frame?.grid, A = a.grid;
       if (A && A.on) {
-        const tick = g ? g[11] : 0, amt = g ? g[16] : a.helm.grid ?? 0.8;
-        const from = p.grid;
-        const to = [p.out, A.slice.where === 'loop' ? p.bank : null, p.g1, p.g2, p.g3, p.g4].filter(Boolean);
-        ctx.setLineDash([2, 5]);
-        ctx.strokeStyle = rgba(theme.grid, (0.12 + 0.55 * tick) * (0.3 + 0.7 * amt));
-        ctx.lineWidth = 0.75 + tick * 1.25;
-        for (const t of to) {
-          const mx = (from[0] + t[0]) / 2, my = (from[1] + t[1]) / 2;
-          const qx = mx + (cx - mx) * 0.3, qy = my + (cy - my) * 0.3 - 20;
-          ctx.beginPath(); ctx.moveTo(from[0], from[1]); ctx.quadraticCurveTo(qx, qy, t[0], t[1]); ctx.stroke();
+        const tick = g ? g[11] : 0, amt = g ? g[16] : (a.helm.grid ?? 0.8);
+        const rings = [[R * 0.84, g ? g[4] : 0, g ? g[2] : -1, theme.signal], [R * 0.76, g ? g[5] : 0, g ? g[3] : -1, theme['grid-red']]];
+        ctx.strokeStyle = rgba(theme.grid, 0.1 + 0.35 * tick * amt);
+        ctx.lineWidth = 1 + 2 * tick;
+        ctx.beginPath(); ctx.arc(cx, cy, R * 0.8, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1;
+        for (const [rr, n, idx, col] of rings) {
+          for (let k = 0; k < n; k++) {
+            const ang = -Math.PI / 2 + (k / n) * Math.PI * 2;
+            const x = cx + rr * Math.cos(ang), y = cy + rr * Math.sin(ang);
+            const on = k === idx;
+            ctx.fillStyle = on ? col : rgba(col, 0.42);
+            if (on) { ctx.shadowColor = col; ctx.shadowBlur = 8 + 10 * tick; }
+            ctx.beginPath(); ctx.arc(x, y, on ? 3.2 + 1.5 * tick : 1.8, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
         }
+        // the grid's hands on the drone
+        const I = A.inform || {};
+        const from = p.grid;
+        const hand = (to, strength, label, lx, ly) => {
+          if (!to || strength <= 0.001) return;
+          const mx = (from[0] + to[0]) / 2, my = (from[1] + to[1]) / 2;
+          const qx = mx + (cx - mx) * 0.3, qy = my + (cy - my) * 0.3 - 18;
+          ctx.strokeStyle = rgba(theme.grid, (0.1 + 0.5 * Math.min(1, strength)) * (0.35 + 0.65 * amt) * (0.7 + 0.3 * tick));
+          ctx.lineWidth = 0.75 + 1.5 * Math.min(1, strength) * (0.5 + tick);
+          ctx.beginPath(); ctx.moveTo(from[0], from[1]); ctx.quadraticCurveTo(qx, qy, to[0], to[1]); ctx.stroke();
+          if (label) {
+            ctx.fillStyle = rgba(theme.grid, 0.75);
+            ctx.font = `500 8.5px ${theme.fData}`;
+            ctx.textAlign = 'center';
+            ctx.fillText(label, lx ?? (0.25 * from[0] + 0.5 * qx + 0.25 * to[0]), ly ?? (0.25 * from[1] + 0.5 * qy + 0.25 * to[1]) - 4);
+          }
+        };
+        ctx.setLineDash([3, 4]);
+        const tuneS = g && g.length > 23 ? g[23] : (I.tune || 0);
+        for (let i = 1; i <= 4; i++) hand(p[`g${i}`], tuneS + Math.abs(A.tex?.fold || 0) * 0.3, i === 4 ? 'chord · texture' : '');
+        hand(p.harm, I.harm && I.harm !== 'off' ? 0.6 : 0, 'harmony');
+        hand(p.tape, (I.tape ? 0.6 : 0) + (I.strike || 0), I.tape ? 'tempo · strike' : 'strike');
+        hand(p.out, Math.max(A.slice.mix, A.echo.mix, A.pan.depth), 'slice · echo · pan');
+        if (A.slice.where === 'loop') hand(p.bank, A.slice.mix, 'slice');
         ctx.setLineDash([]);
         ctx.lineWidth = 1;
       }

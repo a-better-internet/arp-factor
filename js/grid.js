@@ -11,6 +11,10 @@
  *   4. Pan      the drone split into frequency bands, each thrown across
  *               the stereo field in a geometric pattern
  *
+ * And it informs the drone itself: its chord retunes the generators, its
+ * chord tones lead the harmonizer, its tempo sets the tape loop and the
+ * reels, and its steps strike chord tones into the loop to ring on.
+ *
  * Pure data and pure functions, shared by the page and the offline renderer.
  * The signal engine keeps its own copy of the chord table (worklets cannot
  * import modules everywhere).
@@ -61,6 +65,11 @@ export const TEX_SOURCES = [
   { id: 'a', label: 'Voice A degree' }, { id: 'b', label: 'Voice B degree' },
   { id: 'pulse', label: 'Pulse on every step' }, { id: 'alt', label: 'Alternate ±' },
 ];
+export const HARM_FOLLOW = [
+  { id: 'off', label: 'Its own intervals' }, { id: 'chord', label: 'The chord (fifth and third)' }, { id: 'step', label: 'The voices, step by step' },
+];
+export const STRIKE_ON = [{ id: 'root', label: 'When A reaches the root' }, { id: 'every', label: 'Every step' }];
+export const TAPE_TIME = [{ id: false, label: 'Free' }, { id: true, label: 'In time' }];
 export const PAN_PATTERNS = [
   { id: 'orbit', label: 'Orbit' }, { id: 'pingpong', label: 'Ping-pong' }, { id: 'mirror', label: 'Mirror' },
   { id: 'scatter', label: 'Scatter (seeded)' }, { id: 'chord', label: 'Follow voice A' },
@@ -80,6 +89,8 @@ export function defaultGrid() {
     echo: { mix: 0.3, time: 0.75, fb: 0.45, fbStep: 0.25, map: 'chord', heads: 'jump', tone: 0.6, voice: 'b', toLoop: 0.08, spread: 0.5 },
     tex: { src: 'pulse', fold: 0.35, shape: 0.25, mult: 0.15, exc: 0.2, decay: 0.18 },
     pan: { depth: 0.7, pattern: 'orbit', split: 4, slew: 0.04, cycle: 8 },
+    // what the grid tells the drone itself
+    inform: { tune: 0.55, harm: 'chord', harmMix: 0.15, tape: true, strike: 0.2, strikeOn: 'root' },
   };
 }
 
@@ -133,7 +144,7 @@ const pick = (v, list, d) => (list.some((o) => o.id === v) ? v : d);
 export function normalizeGrid(input) {
   const d = defaultGrid();
   const g = input && typeof input === 'object' ? input : {};
-  const V = g.voices || {}, Sl = g.slice || {}, E = g.echo || {}, T = g.tex || {}, P = g.pan || {};
+  const V = g.voices || {}, Sl = g.slice || {}, E = g.echo || {}, T = g.tex || {}, P = g.pan || {}, I = g.inform || {};
   const thrMin = Math.round(num(g.thrMin, d.thrMin, 0, 100));
   return {
     on: typeof g.on === 'boolean' ? g.on : d.on,
@@ -174,6 +185,10 @@ export function normalizeGrid(input) {
     pan: {
       depth: num(P.depth, d.pan.depth, 0, 1), pattern: pick(P.pattern, PAN_PATTERNS, d.pan.pattern),
       split: Math.round(num(P.split, d.pan.split, 2, 4)), slew: num(P.slew, d.pan.slew, 0.002, 1), cycle: Math.round(num(P.cycle, d.pan.cycle, 2, 32)),
+    },
+    inform: {
+      tune: num(I.tune, d.inform.tune, 0, 1), harm: pick(I.harm, HARM_FOLLOW, d.inform.harm), harmMix: num(I.harmMix, d.inform.harmMix, 0, 0.9),
+      tape: typeof I.tape === 'boolean' ? I.tape : d.inform.tape, strike: num(I.strike, d.inform.strike, 0, 1), strikeOn: pick(I.strikeOn, STRIKE_ON, d.inform.strikeOn),
     },
   };
 }

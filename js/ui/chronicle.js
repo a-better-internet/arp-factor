@@ -227,6 +227,11 @@ export class Chronicle {
         // temper turning: a dot under the strata, warm or cold
         ctx.fillStyle = m.kind === 'warm' ? theme.warm : theme.signal;
         ctx.beginPath(); ctx.arc(x, padT + plotH + 4.5, 2.5, 0, Math.PI * 2); ctx.fill();
+      } else if (m.kind === 'grid') {
+        // the grid: an order from the menu or a new chord, a small aqua diamond
+        ctx.fillStyle = theme.grid;
+        const y0 = padT + plotH + 4.5;
+        ctx.beginPath(); ctx.moveTo(x, y0 - 3.5); ctx.lineTo(x + 3.5, y0); ctx.lineTo(x, y0 + 3.5); ctx.lineTo(x - 3.5, y0); ctx.closePath(); ctx.fill();
       } else if (m.kind === 'epoch') {
         ctx.fillStyle = rgba(theme.ink, 0.5);
         ctx.fillRect(Math.round(x), padT, 1, plotH);

@@ -14,7 +14,10 @@
  * The drone itself has no LFOs, no noise sources and no sequencers: all its
  * motion comes from the system reading itself. Then the grid arrives: a
  * two-voice arpeggiator whose steps do not play pitches but carve, echo,
- * colour and throw the drone around (see "the grid" below). Its dice are
+ * colour and throw the drone around (see "the grid" below). The grid also
+ * informs the drone itself: its chord retunes the generators, its chord
+ * tones lead the harmonizer, its tempo sets the tape loop and reel lengths,
+ * and its steps strike chord tones into the loop. Its dice are
  * seeded by the architecture, so the same architecture still takes the same
  * path, and the web can even choose its notes or clock it.
  */
@@ -485,6 +488,7 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     this.heldGen = new Uint32Array(4);
     this.reelMode = new Uint8Array(4);    // 0 off, 1 self, 2 held tape
     this.reelSelfLen = new Int32Array(4).fill(sr * 6);
+    this.reelLenSec = new Float64Array(4).fill(6);
     this.reelBase = new Float64Array(4);
     this.reelSpeed = new Float64Array(4).fill(1);
     this.reelRecSrc = new Int8Array(4).fill(-1);
@@ -661,6 +665,7 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     {
       const hs = harmonicSeries([...this.gBase]);
       this.hsN0 = hs.n[0];
+      this.hsF0 = hs.f0;
       for (let i = 0; i < 4; i++) {
         this.hCorr[i] = Math.log2(hs.n[i] * hs.f0 / this.gBase[i]);
         const j = (i + 3) & 3, g = gcd(hs.n[i], hs.n[j]);
@@ -729,7 +734,8 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     for (let r = 0; r < 4; r++) {
       const R = a.reels[r];
       this.reelMode[r] = R.mode === 'self' ? 1 : R.mode === 'tape' ? 2 : 0;
-      this.reelSelfLen[r] = Math.round(clamp(+R.len || 6, 0.5, 24) * sr);
+      this.reelLenSec[r] = clamp(+R.len || 6, 0.5, 24);
+      this.reelSelfLen[r] = Math.round(this.reelLenSec[r] * sr);
       if (this.reelSelfLen[r] > this.reelMax) this.reelSelfLen[r] = this.reelMax;
       this.reelBase[r] = clamp(+R.level, 0, 1.25);
       this.reelSpeed[r] = clamp(+R.speed, -4, 4);
@@ -972,10 +978,10 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     const P = this.P, dP = this.dP;
     for (let i = 0; i < NRAMP; i++) { P[i] += dP[i] * CR; dP[i] = 0; }
     for (let k = 0; k < NB; k++) { this.bg[k] += this.dbg[k] * CR; this.dbg[k] = 0; }
-    this.tapeS = this.timeBase; this.tapeV = 0;
-    this.spreadS = clamp(this.timeBase * this.spread, 0.01, 9) / this.timeBase;
-    P[R_DL] = this.timeBase * this.sr;
-    P[R_DR] = clamp(this.timeBase * this.spread, 0.01, 9) * this.sr;
+    this.tapeS = this.timeEff; this.tapeV = 0;
+    this.spreadS = clamp(this.timeEff * this.spreadEff, 0.01, 9) / this.timeEff;
+    P[R_DL] = this.timeEff * this.sr;
+    P[R_DR] = clamp(this.timeEff * this.spreadEff, 0.01, 9) * this.sr;
   }
 
   ramp(i, v) { this.dP[i] = (v - this.P[i]) / CR; }
@@ -1029,6 +1035,12 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     this.pDepth = 0; this.pPat = 0; this.pSlew = 0.04; this.pCycle = 8;
     this.pT = new Float64Array(4); this.pS = new Float64Array(4); this.pMixS = 0;
     this.splitL = new Splitter(sr); this.splitR = new Splitter(sr);
+    // informing the drone
+    this.hsF0 = 55; this.webRoot = 110;
+    this.iTune = 0; this.iHarm = 0; this.iHarmMix = 0; this.iTape = false; this.iStrike = 0; this.iStrikeRoot = true;
+    this.cAmt = 0; this.cOff = new Float64Array(4); this.cPcs = new Float64Array(12); this.cPcN = 0;
+    this.timeEff = 1.6; this.spreadEff = 1.1;
+    this.stOn = false; this.stT = 0; this.stPh = 0; this.stF = 220; this.stA = 0;
   }
 
   gridRand() {
@@ -1104,13 +1116,66 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     this.pCycle = clamp(Math.round(+Pn.cycle || 8), 2, 32);
     const split = clamp(Math.round(+Pn.split || 4), 2, 4);
     this.splitL.set(split); this.splitR.set(split);
+    const I = G.inform || {};
+    this.iTune = clamp(+I.tune || 0, 0, 1);
+    this.iHarm = I.harm === 'chord' ? 1 : I.harm === 'step' ? 2 : 0;
+    this.iHarmMix = clamp(+I.harmMix || 0, 0, 0.9);
+    this.iTape = !!I.tape;
+    this.iStrike = clamp(+I.strike || 0, 0, 1);
+    this.iStrikeRoot = I.strikeOn !== 'every';
+    // the chord as ratios within one octave, for tuning the generators to it
+    {
+      const pcs = [];
+      for (const c of this.gChord) {
+        const r = chordRatio(c, this.gJust);
+        const rr = r / Math.pow(2, Math.floor(Math.log2(r) + 1e-9));
+        if (!pcs.some((x) => Math.abs(Math.log2(x / rr)) < 0.005)) pcs.push(rr);
+      }
+      this.cPcN = pcs.length;
+      for (let i = 0; i < pcs.length; i++) this.cPcs[i] = Math.log2(pcs[i]);
+    }
+    // In time: self-recording reels loop a whole number of beats.
+    const beat = 60 / this.gBpm;
+    for (let r = 0; r < 4; r++) {
+      const sec = this.iTape && this.gOn ? clamp(Math.max(1, Math.round(this.reelLenSec[r] / beat)) * beat, 0.5, 24) : this.reelLenSec[r];
+      this.reelSelfLen[r] = Math.min(this.reelMax, Math.round(sec * this.sr));
+    }
+    this.selectReels();
+  }
+
+  /* The tape in time: the nearest whole, half, quarter... or dotted number of
+   * beats at the grid's tempo. */
+  timeInTime(t) {
+    const beat = 60 / this.gBpm;
+    let best = t, bd = 1e9;
+    for (let k = -4; k <= 6; k++) {
+      for (const m of [1, 1.5]) {
+        const c = beat * Math.pow(2, k) * m;
+        if (c < 0.02 || c > 9) continue;
+        const d = Math.abs(Math.log(c / t));
+        if (d < bd) { bd = d; best = c; }
+      }
+    }
+    return best;
+  }
+
+  /* How far (in octaves) a frequency lies from the nearest tone of the grid's chord. */
+  chordPull(f) {
+    const root = this.gKey >= 0 ? midiHz(60 + this.gKey) : this.webRoot;
+    const x = Math.log2(f / root);
+    const fr = x - Math.floor(x);
+    let bd = 9;
+    for (let i = 0; i < this.cPcN; i++) {
+      for (let w = -1; w <= 1; w++) {
+        const d = this.cPcs[i] + w - fr;
+        if (Math.abs(d) < Math.abs(bd)) bd = d;
+      }
+    }
+    return bd;
   }
 
   /* The fundamental of the harmonic series the web lies on, as it sounds now. */
-  webF0() {
-    const g = this.P[R_GF] + this.dP[R_GF] * CR;
-    return g * Math.pow(2, this.hCorr[0] * (1 - this.tune)) / Math.max(1, this.hsN0);
-  }
+  webF0() { return this.webRoot; }
 
   toneHz(reg, interval) {
     const r = chordRatio(interval, this.gJust);
@@ -1208,6 +1273,14 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     }
     // voices: retrigger the fade
     if (this.gFade) { this.vStage[0] = 1; this.vStage[1] = 1; }
+    // strike: a chord tone plucked into the loop, which rings on in the web
+    if (this.iStrike > 0 && (!this.iStrikeRoot || iA === 0)) {
+      let f = fA;
+      while (f < 110) f *= 2;
+      while (f > 1760) f /= 2;
+      this.stOn = true; this.stT = 0; this.stF = f;
+      this.stA = this.iStrike * 0.7 * this.gAmt;
+    }
     if (this.gEvents.length < 240) {
       const mA = Math.round(69 + 12 * Math.log2(fA / 440)), mB = Math.round(69 + 12 * Math.log2(fB / 440));
       this.gEvents.push(this.tSec || 0, mA, mB, iA, iB);
@@ -1648,10 +1721,20 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     // to each other, so the beats between them hold steady instead of
     // speeding up and slowing down. Only the unheld part moves one alone.
     const common = (mdG[D_P1] + mdG[D_P1 + 1] + mdG[D_P1 + 2] + mdG[D_P1 + 3]) * 0.25;
+    // the fundamental the web lies on, before the grid's chord pulls on it
+    this.webRoot = this.hsF0 * Math.pow(2, drift + common * 0.4);
+    // the grid's chord: each generator glides to its nearest chord tone
+    const cT = this.gOn ? this.iTune * Math.min(1, this.gAmt * 1.25) : 0;
+    this.cAmt += (cT - this.cAmt) * coef(glideS * 0.5, crHz);
+    const kC = coef(Math.max(0.3, glideS * 0.35), crHz);
     // In tune, the ratios are held exactly: only the common motion remains.
     for (let i = 0; i < 4; i++) {
       const own = common + (mdG[D_P1 + i] - common) * (1 - this.hold) * (1 - tune);
-      const f = clamp(this.gBase[i] * Math.pow(2, drift + own * 0.4 + tune * this.hCorr[i]), 4, 9000);
+      let f = clamp(this.gBase[i] * Math.pow(2, drift + own * 0.4 + tune * this.hCorr[i]), 4, 9000);
+      if (this.cPcN > 0 && (this.cAmt > 1e-4 || cT > 0)) {
+        this.cOff[i] += (this.chordPull(f) - this.cOff[i]) * kC;
+        f = clamp(f * Math.pow(2, this.cOff[i] * this.cAmt), 4, 9000);
+      }
       this.ramp(R_GF + i, f);
       // warm generators fold less: rounder waveforms
       this.ramp(R_FOLD + i, clamp(this.gFold[i] + md[D_FOLD] * 0.7 + texV * this.tFold * 1.2, 0, 2.6) * (1 - 0.45 * wm));
@@ -1698,7 +1781,12 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < 4; i++) this.ramp(R_D + i, clamp(this.multBase[i] + md[D_MULT] * 0.5 + texV * this.tMult * 0.6, 0, 1) * (1 - (i === 3 ? 0.3 : 0.55) * wm));
     this.ramp(R_DRIVE, this.drive);
 
-    const tT = clamp(this.timeBase * Math.pow(2, mdG[D_TAPE] * 0.6), 0.01, 9);
+    // in time: the loop's tape takes a musical length at the grid's tempo,
+    // and the right head a rhythmic relation to the left
+    const inTime = this.iTape && this.gOn;
+    this.timeEff = inTime ? this.timeInTime(this.timeBase) : this.timeBase;
+    this.spreadEff = inTime ? [0.5, 2 / 3, 0.75, 1, 4 / 3, 1.5, 2].reduce((b, c) => (Math.abs(Math.log(c / this.spread)) < Math.abs(Math.log(b / this.spread)) ? c : b), 1) : this.spread;
+    const tT = clamp(this.timeEff * Math.pow(2, mdG[D_TAPE] * (inTime ? 0.25 : 0.6)), 0.01, 9);
     // The tape transport has inertia: delay time moves like a damped mass,
     // and the heads never change speed abruptly or by more than 45%.
     {
@@ -1708,7 +1796,7 @@ class KybernetesProcessor extends AudioWorkletProcessor {
       const acc = (tT - this.tapeS) * w * w - 2 * w * this.tapeV;
       this.tapeV = clamp(this.tapeV + acc * dtc, -vmax, vmax);
       this.tapeS = clamp(this.tapeS + this.tapeV * dtc, 0.01, 9);
-      const rT = clamp(this.timeBase * this.spread, 0.01, 9) / this.timeBase;
+      const rT = clamp(this.timeEff * this.spreadEff, 0.01, 9) / this.timeEff;
       this.spreadS += (rT - this.spreadS) * coef(1.2, crHz);
     }
     this.ramp(R_DL, this.tapeS * this.sr);
@@ -1722,13 +1810,22 @@ class KybernetesProcessor extends AudioWorkletProcessor {
     this.ramp(R_EXC, clamp(this.excBase + md[D_EXCT] * 0.6 + texV * this.tExc * 0.8, 0, 1) * (1 - 0.7 * wm));
     // Harmonizer: how much of the loop passes through its two voices. The
     // intervals and window glide, so changing them never jumps.
-    this.ramp(R_HMIX, clamp(this.harmBase + md[D_HARM] * 0.4, 0, 0.9));
+    this.ramp(R_HMIX, clamp(this.harmBase + md[D_HARM] * 0.4 + (this.iHarm && this.gOn ? this.iHarmMix * this.gAmt : 0), 0, 0.9));
     this.hWinS += (this.harmWin * this.sr - this.hWinS) * coef(0.4, crHz);
     this.ramp(R_HWIN, this.hWinS);
     {
-      const kI = coef(0.4, crHz);
-      this.lrA += (Math.log(this.harmRA) - this.lrA) * kI;
-      this.lrB += (Math.log(this.harmRB) - this.lrB) * kI;
+      const kI = coef(this.iHarm === 2 ? Math.max(0.06, this.gFade ? this.gAttack : 0.06) : 0.4, crHz);
+      let ra = this.harmRA, rb = this.harmRB;
+      if (this.iHarm && this.gOn) {
+        // the harmonizer sings the grid's chord: its fifth and its third an
+        // octave down, or the tones the two voices are on right now
+        const cn = this.gChord, n = cn.length;
+        if (this.iHarm === 1) { ra = chordRatio(cn[Math.min(2, n - 1)], this.gJust); rb = chordRatio(cn[Math.min(1, n - 1)], this.gJust) / 2; }
+        else { ra = chordRatio(cn[this.gIdxA], this.gJust); rb = chordRatio(cn[this.gIdxB], this.gJust) / 2; }
+        ra = clamp(ra, 0.25, 4); rb = clamp(rb, 0.25, 4);
+      }
+      this.lrA += (Math.log(ra) - this.lrA) * kI;
+      this.lrB += (Math.log(rb) - this.lrB) * kI;
       this.harm.limit(Math.exp(Math.max(this.lrA, this.lrB)));
     }
     // Outside the loop, so it never compounds: a gentle shelf above 1.8 kHz
@@ -2042,7 +2139,14 @@ class KybernetesProcessor extends AudioWorkletProcessor {
         const fbG = P[R_FB];
         const retL = this.lastL * (1 - cross) + this.lastR * cross;
         const retR = this.lastR * (1 - cross) + this.lastL * cross;
-        const inj = casc * P[R_IN] + pert + live + vMono * P[R_VLOOP] + (this.eOutL + this.eOutR) * 0.5 * P[R_ELOOP];
+        let strike = 0;
+        if (this.stOn) {
+          const t = this.stT * invSr;
+          this.stPh += this.stF * invSr; if (this.stPh >= 1) this.stPh -= 1;
+          strike = this.stA * Math.min(1, t / 0.003) * Math.exp(-t / 0.18) * Math.sin(TWO_PI * this.stPh);
+          if (++this.stT > sr * 1.2) this.stOn = false;
+        }
+        const inj = casc * P[R_IN] + pert + live + strike + vMono * P[R_VLOOP] + (this.eOutL + this.eOutR) * 0.5 * P[R_ELOOP];
         let inL = inj + reelL * P[R_R2L] + fbG * retL;
         let inR = inj + reelR * P[R_R2L] + fbG * retR;
         inL = inL > 4 ? 4 : inL < -4 ? -4 : inL;
@@ -2347,6 +2451,8 @@ class KybernetesProcessor extends AudioWorkletProcessor {
       Math.exp(this.sLA), Math.exp(this.sLB), this.eJump ? this.eT1 : this.eTs, this.eFbS, this.tV, this.gTick,
       this.pS[0], this.pS[1], this.pS[2], this.pS[3], this.gAmt, cnLen, this.gToneA, this.gToneB, this.splitL.n,
       this.pDepth * this.gAmt, this.webF0(),
+      this.cAmt, this.timeEff, Math.exp(this.lrA), Math.exp(this.lrB), this.stOn ? Math.exp(-this.stT / (0.18 * this.sr)) : 0,
+      this.gPhase,
     ]);
     this.port.postMessage({
       type: 'frame',

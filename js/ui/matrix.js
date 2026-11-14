@@ -1,7 +1,7 @@
 /*
  * The pin matrix: rows are the system's eyes, columns are the knobs it can
  * turn. A pin connects one to the other with a signed amount. Pale pins add,
- * amber pins invert. Each pin glows with the voltage flowing through it.
+ * violet pins invert. Each pin glows with the voltage flowing through it.
  */
 import { theme, rgba, fit, dprOf } from './theme.js';
 
@@ -140,13 +140,14 @@ export class Matrix {
     for (let i = 0; i < ns; i++) {
       const y = this.rowY[i] + cs / 2;
       const hot = focus && focus.i === i;
-      ctx.fillStyle = hot ? theme.ink : theme.dim;
+      const isGrid = SRC_GROUPS[i] === 4;
+      ctx.fillStyle = hot ? theme.ink : isGrid ? theme.grid : theme.dim;
       ctx.fillText(this.sources[i].code, this.LW - 11, y + 0.5);
       const v = src ? Math.max(-1, Math.min(1, src[i] + bias)) : 0;
       const mh = cs - 6, mx = this.LW - 6;
       ctx.fillStyle = theme.rule;
       ctx.fillRect(mx, y - mh / 2, 2, mh);
-      ctx.fillStyle = v >= 0 ? theme.signal : theme.regulate;
+      ctx.fillStyle = isGrid ? theme.grid : v >= 0 ? theme.signal : theme.regulate;
       ctx.fillRect(mx, y, 2, (-v * mh) / 2);
     }
 

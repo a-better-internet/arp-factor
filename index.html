@@ -6,7 +6,7 @@
 <title>Arp Factor</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="A self-regulating drone forced through an arpeggiator’s grid. The arpeggiator’s steps carve, echo, colour and throw the drone around instead of playing notes.">
-<meta name="theme-color" content="#07090f">
+<meta name="theme-color" content="#0a1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=Martian+Mono:wdth,wght@75..112.5,300..600&family=Michroma&display=swap">
@@ -14,6 +14,16 @@
 <script type="module" src="js/main.js"></script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <radialGradient id="steel-cap" cx="38%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#5d7795"/>
+      <stop offset="0.35" stop-color="#2a3f59"/>
+      <stop offset="0.75" stop-color="#131f30"/>
+      <stop offset="1" stop-color="#0b1420"/>
+    </radialGradient>
+  </defs>
+</svg>
 <header class="bar">
   <div class="bar__in">
     <div class="mark">
@@ -24,7 +34,7 @@
       <div class="readout"><dt>State</dt><dd id="state-chip" class="chip">Ready</dd></div>
       <div class="readout"><dt>Elapsed</dt><dd id="elapsed" class="readout__big">00:00:00</dd></div>
       <div class="readout"><dt>Epoch</dt><dd id="epoch">—</dd></div>
-      <div class="readout readout--grid"><dt>Grid</dt><dd id="grid-read">— · —</dd></div>
+      <div class="readout readout--grid"><dt>Grid</dt><dd id="grid-read"><span class="notes">— · —</span></dd></div>
       <div class="readout readout--era"><dt>Era</dt><dd id="era-read">×2.0 Tide</dd></div>
     </dl>
     <div class="bar__actions">
@@ -70,7 +80,7 @@
         <canvas id="obs-back" class="observatory__cv" aria-hidden="true"></canvas>
         <canvas id="obs-front" class="observatory__cv" role="img" aria-label="The closed web: generators and multipliers feeding the loop of tape, bank, shift and smear around the homeostat, with the output's phase portrait at the centre"></canvas>
       </div>
-      <p class="observatory__legend"><span><i class="key key--signal"></i>pushes</span><span><i class="key key--regulate"></i>pulls back</span><span>dashed: returns and tape</span><span>centre: output phase, mid up, side across</span></p>
+      <p class="observatory__legend"><span><i class="key key--signal"></i>pushes</span><span><i class="key key--regulate"></i>pulls back</span><span>dashed: returns and tape</span><span>centre: output phase, mid up, side across</span><span><i class="key key--grid"></i>the grid: rings are voices A and B walking the chord, dashed hands what it changes in the drone</span></p>
     </section>
 
     <section class="panel matrix" aria-labelledby="matrix-h">
@@ -92,7 +102,7 @@
     <div class="gridp__top">
       <figure class="gridview">
         <canvas id="gridview" class="gridview__cv" role="img" aria-label="The last eight seconds of the grid: each voice’s place in the chord, the slice filters’ frequencies, the echo time and feedback, the texture pulse and where each band sits in the stereo field"></canvas>
-        <figcaption class="gridview__key"><span><i class="key key--signal"></i>voice A</span><span><i class="key key--red"></i>voice B</span><span><i class="key key--grid"></i>echo time, texture</span><span><i class="key key--regulate"></i>echo feedback</span><span>pan: one line per band, lowest pale</span></figcaption>
+        <figcaption class="gridview__key"><span><i class="key key--signal"></i>voice A</span><span><i class="key key--red"></i>voice B</span><span><i class="key key--grid"></i>the drone, informed</span><span><i class="key key--grid"></i>echo time, texture</span><span><i class="key key--regulate"></i>echo feedback</span><span>pan: one line per band, lowest pale</span></figcaption>
       </figure>
       <div class="menu" aria-labelledby="menu-h">
         <h3 class="menu__title" id="menu-h">★ Value Menu ★</h3>
@@ -118,7 +128,7 @@
           <button type="button" class="btn btn--small btn--quiet" id="bank-flatten">Flatten</button>
         </div>
       </div>
-      <p class="bank__key"><span><i class="key key--signal"></i>band energy</span><span><i class="key key--regulate"></i>held down by its inverted VCA</span><span><i class="key key--ink"></i>carving you draw</span><span><i class="key key--dots"></i>carving as the system bends it</span></p>
+      <p class="bank__key"><span><i class="key key--signal"></i>band energy</span><span><i class="key key--regulate"></i>held down by its inverted VCA</span><span><i class="key key--ink"></i>carving you draw</span><span><i class="key key--dots"></i>carving as the system bends it</span><span><i class="key key--grid"></i>the grid: slice filters, chord tones along the floor, pan splits dashed</span></p>
     </section>
 
     <section class="panel logp" aria-labelledby="log-h">

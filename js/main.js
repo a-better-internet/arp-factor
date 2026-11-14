@@ -106,7 +106,7 @@ const HELM = [
   { key: 'setpoint', label: 'Setpoint', min: -40, max: -6, format: fmt.db, title: 'The level the homeostat breathes around, like a thermostat’s dial' },
   { key: 'coupling', label: 'Coupling', min: 0, max: 2, format: fmt.x, title: 'How strongly every eye turns every knob' },
   { key: 'era', label: 'Era', min: 0.25, max: 64, curve: 'log', format: (v) => `×${v < 1 ? v.toFixed(2) : v.toFixed(1)} ${eraName(v)}`, title: 'Stretches every slow process: release, breath, glide, habituation' },
-  { key: 'warmth', label: 'Warmth', min: 0, max: 1, format: fmt.pct, title: 'The colour the web leans toward: cold and metallic at 0%, settled into one warm harmonic series at 100%. Temper wanders around it; the amber arc shows the colour now.' },
+  { key: 'warmth', label: 'Warmth', min: 0, max: 1, format: fmt.pct, title: 'The colour the web leans toward: cold and metallic at 0%, settled into one warm harmonic series at 100%. Temper wanders around it; the inner arc shows the colour now.' },
   { key: 'grid', label: 'Grid', min: 0, max: 1, format: fmt.pct, title: 'How hard the grid forces the drone: every lane, and the arpeggiator’s own voices, scaled together. 0% lets the drone run free; the clock keeps counting.' },
 ];
 const HELM_INDEX = { inflow: 0, bias: 1, drift: 2, setpoint: 3, coupling: 4, era: 5, volume: 6, warmth: 7, grid: 8 };
@@ -181,7 +181,12 @@ architecture.sync();
 const gridRead = $('#grid-read');
 const gridUI = buildGrid($('.gridp'), {
   getArch, changed, notify, syncAll: () => syncAll(), elapsed: () => elapsed,
-  onNotes: (a, b) => { gridRead.textContent = `${a} · ${b}`; },
+  onNotes: (a, b, ia, ib, ea, eb) => {
+    // two rows of LEDs: each voice's place in its walk of the chord
+    const row = (cls, n, i) => `<span class="steps__row steps__row--${cls}">${Array.from({ length: n }, (_, k) => `<i class="steps__led${k === i ? ' is-on' : ''}"></i>`).join('')}</span>`;
+    gridRead.innerHTML = `<span class="steps" aria-hidden="true">${row('a', ea, ia)}${row('b', eb, ib)}</span><span class="notes">${a} · ${b}</span>`;
+  },
+  mark: (label) => chronicle.mark(elapsed, 'grid', label),
 });
 gridUI.sync();
 $('#arch-name').textContent = arch.name;

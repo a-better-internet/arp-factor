@@ -3,33 +3,39 @@
  * the centre, the pin matrix on the right; below them the spectral bank and
  * logbook, the long chronicle strip, then the architect's bench.
  *
- * One deliberate look: a night console for long listening, so a single dark
- * palette. Two hues carry meaning everywhere: pale phosphor blue is signal,
- * amber is regulation (clamping, inversion, the homeostat's hand).
- * The grid brings a third: mustard (and ketchup, for voice B), the colours
- * of the arpeggiator it came from. Wherever it shows, the clock is acting.
+ * One deliberate look: a cold, brushed-steel console for long listening, so a
+ * single dark palette. Two hues carry meaning everywhere: ice blue is signal,
+ * cobalt violet is regulation (clamping, inversion, the homeostat's hand).
+ * The grid brings a third, aqua, with chrome silver for its second voice.
+ * Wherever aqua shows, the clock is acting on the drone.
  */
 :root {
   color-scheme: dark;
-  --void: #07090f;
-  --panel: #0c1019;
-  --panel-2: #111726;
-  --rule: #1c2434;
-  --rule-hi: #2a3550;
-  --ink: #dfe4ef;
-  --dim: #8a94ab;
-  --faint: #5a6580;
-  --signal: #a6d8ff;
-  --signal-hi: #eaf6ff;
-  --signal-deep: #3a73a8;
-  --regulate: #ffad5a;
-  --regulate-deep: #8a4b1c;
-  --alarm: #ff7466;
-  --warm: #ffc48f;
-  --grid: #f5c518;
-  --grid-red: #ff5a47;
-  --grid-board: #a3150f;
-  --grid-board-hi: #c81d14;
+  --void: #05090f;
+  --panel: #0c1522;
+  --panel-2: #122034;
+  --rule: #1b2b41;
+  --rule-hi: #2d4766;
+  --ink: #e6eef9;
+  --dim: #94a8c2;
+  --faint: #5c718d;
+  --signal: #8ed6ff;
+  --signal-hi: #eef8ff;
+  --signal-deep: #2c6aa0;
+  --regulate: #a3a2ff;
+  --regulate-deep: #48448f;
+  --alarm: #ff6b81;
+  --warm: #f0b48c;
+  --grid: #5ee7d6;
+  --grid-red: #c9d7ea;
+  --grid-board: #0f1d2e;
+  --grid-board-hi: #18304a;
+  /* steel */
+  --metal-hi: #1b2c43;
+  --metal-lo: #0a121d;
+  --sheen: rgb(170 210 255 / 0.08);
+  --sheen-hi: rgb(200 228 255 / 0.16);
+  --shade: rgb(0 0 0 / 0.45);
 
   --f-display: "Michroma", "Eurostile", "Microgramma", "Arial Black", sans-serif;
   --f-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
@@ -416,11 +422,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- the grid ---------- */
 
-.code--grid { color: var(--void); background: var(--grid); border-color: var(--grid); }
+.code--grid { color: #04201d; background: linear-gradient(180deg, #8af3e6, var(--grid)); border-color: var(--grid); }
 .key--grid { background: var(--grid); }
 .key--red { background: var(--grid-red); }
 .readout--grid dd { color: var(--grid) !important; font-variant-numeric: tabular-nums; }
-.gridp { margin-top: var(--gap); border-top: 2px solid var(--grid); }
+.gridp { margin-top: var(--gap); border-top: 1px solid rgb(94 231 214 / 0.55); box-shadow: inset 0 1px 0 rgb(94 231 214 / 0.25), inset 0 1px 0 var(--sheen); }
 .gridp.is-off { border-top-color: var(--rule-hi); }
 .gridp.is-off .gridview, .gridp.is-off .lanes { opacity: 0.55; }
 .gridp .panel__meta { font-variant-numeric: tabular-nums; }
@@ -438,32 +444,40 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .gridview__cv { width: 100%; height: 236px; display: block; background: var(--void); border: 1px solid var(--rule); }
 .gridview__key { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 400 10px/1.4 var(--f-data); color: var(--faint); }
 
-/* The Value Menu: a drive-thru board bolted into the console, on purpose. */
+/* The Value Menu: an engraved steel plate of orders. */
 .menu {
   display: grid; gap: 8px; align-content: start;
   padding: 12px 12px 14px;
-  background: var(--grid-board);
-  border: 3px solid var(--grid);
-  border-radius: 8px;
-  box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.35), 0 3px 0 #5e0b07;
-  color: var(--grid);
+  background: linear-gradient(160deg, #1a2b42 0%, #0e1a2a 55%, #132338 100%);
+  border: 1px solid var(--rule-hi);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 var(--sheen-hi), inset 0 -1px 0 var(--shade), 0 2px 10px rgb(0 0 0 / 0.35);
+  position: relative;
 }
-.menu__title { font: 400 15px/1 var(--f-display); letter-spacing: 0.18em; text-align: center; color: var(--grid); text-shadow: 1px 1px 0 #5e0b07; }
-.menu__note { font-size: 11.5px; line-height: 1.4; color: color-mix(in srgb, var(--grid) 78%, var(--grid-board)); text-align: center; text-wrap: pretty; }
+.menu::before, .menu::after {
+  content: ""; position: absolute; top: 7px; width: 5px; height: 5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #9fb4cf, #2a3b52 70%);
+}
+.menu::before { left: 7px; }
+.menu::after { right: 7px; }
+.menu__title { font: 400 12px/1 var(--f-display); letter-spacing: 0.26em; text-align: center; color: var(--grid); text-transform: uppercase; text-shadow: 0 0 12px rgb(94 231 214 / 0.35); }
+.menu__note { font-size: 11.5px; line-height: 1.4; color: var(--dim); text-align: center; text-wrap: pretty; }
 .menu__items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .menu__item {
   display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-width: 0;
   padding: 7px 9px; min-height: 34px;
-  background: #7d100b; color: var(--grid);
-  border: 1.5px solid color-mix(in srgb, var(--grid) 45%, transparent); border-radius: 5px;
-  font: 800 11px/1.1 var(--f-ui); font-variation-settings: "wdth" 110; text-transform: uppercase; letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #1c2e46, #111e30);
+  color: var(--ink);
+  border: 1px solid var(--rule-hi); border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--sheen-hi), 0 1px 0 var(--shade);
+  font: 600 11px/1.1 var(--f-ui); font-variation-settings: "wdth" 108; text-transform: uppercase; letter-spacing: 0.04em;
   cursor: pointer; text-align: left;
 }
-.menu__item:hover { background: var(--grid-board-hi); border-color: var(--grid); }
-.menu__item.is-on { background: var(--grid); color: var(--grid-board); border-color: var(--grid); }
-.menu__item:focus-visible { outline: 2px solid #fff3b0; outline-offset: 1px; }
+.menu__item:hover { border-color: var(--grid); }
+.menu__item.is-on { background: linear-gradient(180deg, rgb(94 231 214 / 0.28), rgb(94 231 214 / 0.1)); border-color: var(--grid); color: var(--signal-hi); box-shadow: inset 0 1px 0 var(--sheen-hi), 0 0 14px rgb(94 231 214 / 0.18); }
+.menu__item:focus-visible { outline: 1.5px solid var(--grid); outline-offset: 1px; }
 .menu__name { min-width: 0; overflow-wrap: anywhere; }
-.menu__price { font: 500 10px/1 var(--f-data); opacity: 0.85; flex-shrink: 0; }
+.menu__price { font: 500 10px/1 var(--f-data); color: var(--grid); flex-shrink: 0; }
 
 .lanes { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--gap); }
 .lane {
@@ -477,6 +491,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .lane--clock { grid-column: span 4; }
 .lane--pattern { grid-column: span 8; }
 .lane--slice, .lane--echo, .lane--tex, .lane--pan { grid-column: span 6; }
+.lane--inform { grid-column: 1 / -1; border-color: rgb(94 231 214 / 0.35); box-shadow: inset 0 1px 0 rgb(94 231 214 / 0.18), inset 0 -1px 0 var(--shade); }
+.lane--inform .card__note { max-width: 96ch; }
+.inform { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 24px; align-items: end; }
 .lane--voices { grid-column: 1 / -1; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; column-gap: 18px; }
 .lane--voices .card__head, .lane--voices .card__note { grid-column: 1 / -1; }
 .lane .card__note { font-size: 12px; }
@@ -493,7 +510,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font: 400 10.5px/1 var(--f-data); cursor: pointer;
 }
 .chip-btn:hover { border-color: var(--grid); color: var(--ink); }
-.chip-btn[aria-pressed="true"] { background: var(--grid); border-color: var(--grid); color: var(--void); }
+.chip-btn[aria-pressed="true"] { background: linear-gradient(180deg, #8af3e6, var(--grid)); border-color: var(--grid); color: #04201d; }
 .pattern__foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
 .dice { display: flex; align-items: center; gap: 8px; }
 .dice .live { margin-left: 0; }
@@ -759,6 +776,7 @@ kbd {
   .gridp__top { grid-template-columns: minmax(0, 1fr); }
   .lane, .lane--clock, .lane--pattern, .lane--slice, .lane--echo, .lane--tex, .lane--pan { grid-column: 1 / -1; }
   .lane--voices { grid-template-columns: minmax(0, 1fr); }
+  .inform { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
   .readout--grid { display: none; }
@@ -766,3 +784,78 @@ kbd {
   .gridview__cv { height: 220px; }
   .switch__label { display: none; }
 }
+
+/* ---------- steel: the metallic finish over everything ---------- */
+
+html { background: var(--void); }
+body {
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgb(60 120 200 / 0.10), transparent 70%),
+    radial-gradient(900px 500px at 0% 30%, rgb(70 110 170 / 0.06), transparent 70%),
+    linear-gradient(180deg, #070c14 0%, var(--void) 60%);
+  background-attachment: fixed;
+}
+.bar {
+  background: linear-gradient(180deg, rgb(22 36 56 / 0.94), rgb(10 17 28 / 0.94));
+  border-bottom: 1px solid var(--rule-hi);
+  box-shadow: inset 0 -1px 0 var(--shade), 0 1px 0 var(--sheen);
+}
+.mark__word {
+  background: linear-gradient(180deg, #f4f9ff 0%, #a9c1dd 55%, #e3eefb 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.panel, .card, .lane, .toolbar {
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.008) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, var(--metal-hi) 0%, var(--panel) 38%, var(--metal-lo) 100%);
+  border-color: var(--rule);
+  box-shadow: inset 0 1px 0 var(--sheen), inset 0 -1px 0 var(--shade), 0 1px 2px rgb(0 0 0 / 0.35);
+}
+.lane { background: linear-gradient(180deg, #172840 0%, #0f1b2c 45%, #0b1522 100%); }
+.code {
+  background: linear-gradient(180deg, #24384f, #121f30);
+  border-color: var(--rule-hi);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 var(--sheen-hi);
+  border-radius: 2px;
+}
+.btn {
+  background: linear-gradient(180deg, #1d2f47 0%, #121f31 100%);
+  border-color: var(--rule-hi);
+  box-shadow: inset 0 1px 0 var(--sheen-hi), 0 1px 0 var(--shade);
+}
+.btn:hover { border-color: var(--signal); }
+.btn--quiet, .btn--ghost { background: transparent; box-shadow: none; }
+.btn--engage {
+  background: linear-gradient(180deg, #dff2ff 0%, #8ed6ff 45%, #5aa9e0 100%);
+  border-color: #b9e4ff;
+  color: #03111f;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 0 18px rgb(142 214 255 / 0.25);
+}
+.btn--engage:hover { background: linear-gradient(180deg, #f2faff 0%, #a8e0ff 45%, #6fb7ea 100%); }
+.is-running .btn--engage { background: linear-gradient(180deg, #1d2f47, #121f31); color: var(--regulate); border-color: var(--regulate); box-shadow: inset 0 1px 0 var(--sheen-hi), 0 0 14px rgb(163 162 255 / 0.18); }
+.select, .input { background-color: #0a1420; border-color: var(--rule-hi); box-shadow: inset 0 1px 2px var(--shade); }
+.knob__cap { fill: url(#steel-cap); stroke: #3a5677; }
+.knob__ptr { stroke: #f4f9ff; }
+.knob__track { stroke: #1f3249; }
+.gridview__cv, .trace__cv, .bank__cv, .chron__cv { background: #050a12; box-shadow: inset 0 1px 6px rgb(0 0 0 / 0.6); }
+.observatory__stage { background: radial-gradient(circle at 60% 50%, rgb(40 80 140 / 0.12), transparent 70%); }
+.seg span { background: linear-gradient(180deg, #172840, #0e1a29); }
+.seg input:checked + span { background: linear-gradient(180deg, #24405f, #16283e); }
+.chip-btn { background: linear-gradient(180deg, #152539, #0d1827); }
+.switch__track { background: linear-gradient(180deg, #08111c, #0f1c2c); }
+.switch__track::after { background: radial-gradient(circle at 35% 30%, #e6f0fb, #7d93ad 70%); }
+.toast { background: linear-gradient(180deg, #1a2b42, #0e1a2a); }
+
+/* the grid in the header: voice A and B walking their chords */
+.steps { display: inline-grid; gap: 2px; vertical-align: middle; margin-right: 8px; }
+.steps__row { display: flex; gap: 2px; }
+.steps__led { width: 7px; height: 4px; border-radius: 1px; background: #1a2b40; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05); }
+.steps__row--a .steps__led.is-on { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+.steps__row--b .steps__led.is-on { background: var(--grid-red); box-shadow: 0 0 6px var(--grid-red); }
+.readout--grid dd { display: flex; align-items: center; }
+.readout--grid .notes { color: var(--grid); }
+.is-running .readout--grid dt { color: var(--grid); }
+
+/* the drone, informed: live lines in the cards */
+.card__live--grid { color: var(--grid); opacity: 0.85; }

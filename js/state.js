@@ -185,6 +185,7 @@ export const PRESETS = [
     g.echo = { ...g.echo, mix: 0.18, time: 1.5, fb: 0.4, fbStep: 0.1 };
     g.tex = { ...g.tex, src: 'a', fold: 0.15, shape: 0.2, mult: 0, exc: 0.1 };
     g.pan = { ...g.pan, depth: 0.35, pattern: 'chord', cycle: 8 };
+    g.inform = { tune: 0.8, harm: 'chord', harmMix: 0.2, tape: true, strike: 0.15, strikeOn: 'root' };
   }),
   variant('Echo Geometry', 'Lane 2, time-domain arpeggiation. The drone stays anchored; the echo’s heads jump between multiples of the step, and each jump changes how much comes back, so the room keeps changing shape in time.', (a) => {
     a.glide = 12;
@@ -196,6 +197,7 @@ export const PRESETS = [
     g.echo = { mix: 0.62, time: 0.5, fb: 0.62, fbStep: 0.28, map: 'steps', heads: 'jump', tone: 0.55, voice: 'b', toLoop: 0.22, spread: 0.9 };
     g.tex = { ...g.tex, fold: 0.1, shape: 0.1, mult: 0, exc: 0.1 };
     g.pan = { ...g.pan, depth: 0.4, pattern: 'pingpong' };
+    g.inform = { tune: 0.5, harm: 'step', harmMix: 0.15, tape: true, strike: 0.35, strikeOn: 'every' };
   }),
   variant('Bloom Clock', 'Lane 3, texture pulses. Every tick makes the generators fold harder, the shaper brighten and the cascade multiply deeper, then relax: the saturation breathes with the clock while the pitch never moves.', (a) => {
     a.glide = 1.5;
@@ -213,6 +215,7 @@ export const PRESETS = [
     g.echo = { ...g.echo, mix: 0.15, fb: 0.3, fbStep: 0 };
     g.tex = { src: 'pulse', fold: 0.9, shape: 0.7, mult: 0.5, exc: 0.45, decay: 0.12 };
     g.pan = { ...g.pan, depth: 0.25, pattern: 'mirror' };
+    g.inform = { tune: 0.6, harm: 'off', harmMix: 0, tape: true, strike: 0.3, strikeOn: 'root' };
   }),
   variant('Room Choreography', 'Lane 4, spatial panning grids. The web split into four frequency bands, each thrown across the stereo field in a tight, syncopated pattern. Deep and stationary in tone; its place in the room dances.', (a) => {
     a.glide = 15;
@@ -228,6 +231,7 @@ export const PRESETS = [
     g.echo = { ...g.echo, mix: 0.12, fb: 0.3, fbStep: 0 };
     g.tex = { ...g.tex, fold: 0, shape: 0, mult: 0, exc: 0.1 };
     g.pan = { depth: 1, pattern: 'pingpong', split: 4, slew: 0.012, cycle: 8 };
+    g.inform = { tune: 0.7, harm: 'chord', harmMix: 0.15, tape: true, strike: 0.1, strikeOn: 'root' };
   }),
   variant('Biggie Size', 'All four lanes at once, and the arpeggiator’s own two voices let into the loop, where the web takes them in as raw material. Where’s the beef? In the feedback.', (a) => {
     a.glide = 6;
@@ -241,6 +245,7 @@ export const PRESETS = [
     g.echo = { mix: 0.35, time: 0.75, fb: 0.5, fbStep: 0.2, map: 'chord', heads: 'jump', tone: 0.5, voice: 'b', toLoop: 0.15, spread: 0.6 };
     g.tex = { src: 'alt', fold: 0.4, shape: 0.3, mult: 0.25, exc: 0.25, decay: 0.15 };
     g.pan = { depth: 0.8, pattern: 'orbit', split: 4, slew: 0.03, cycle: 6 };
+    g.inform = { tune: 0.9, harm: 'step', harmMix: 0.25, tape: true, strike: 0.4, strikeOn: 'every' };
   }),
   variant('The Web Plays', 'No tempo at all. The grid steps whenever one of the logic gates opens or shuts, and the web chooses which chord tone comes next, so the drone decides its own rhythm.', (a) => {
     a.helm.era = 1;
@@ -257,6 +262,7 @@ export const PRESETS = [
     g.echo = { ...g.echo, mix: 0.3, map: 'chord', heads: 'glide' };
     g.tex = { ...g.tex, src: 'pulse', decay: 0.6 };
     g.pan = { ...g.pan, pattern: 'scatter', depth: 0.6, slew: 0.2 };
+    g.inform = { tune: 0.6, harm: 'step', harmMix: 0.2, tape: false, strike: 0.3, strikeOn: 'every' };
   }),
   variant('Hearth', 'Warm. Generators in one low harmonic series, light multiplication and a long, soft smear. Its colour still wanders, but it leans toward a glow.', (a) => {
     a.glide = 14;
@@ -491,6 +497,7 @@ export function deriveArch(word) {
   G.echo = { ...G.echo, mix: round(range(0.1, 0.45)), time: pick([0.25, 0.5, 0.75, 1, 1.5]), fb: round(range(0.25, 0.65)), fbStep: round(range(0, 0.35)), map: pick(['chord', 'steps']), heads: pick(['jump', 'jump', 'glide']) };
   G.tex = { ...G.tex, src: pick(['a', 'b', 'pulse', 'pulse', 'alt']), fold: round(range(-0.2, 0.6)), shape: round(range(0, 0.5)), mult: round(range(-0.2, 0.4)), exc: round(range(0, 0.4)) };
   G.pan = { ...G.pan, depth: round(range(0.3, 0.9)), pattern: pick(['orbit', 'pingpong', 'mirror', 'scatter', 'chord']), split: pick([2, 3, 4, 4]), cycle: pick([4, 6, 8, 8, 12, 16]) };
+  G.inform = { tune: round(range(0.2, 0.9)), harm: pick(['off', 'chord', 'chord', 'step']), harmMix: round(range(0, 0.3)), tape: r() < 0.7, strike: round(range(0, 0.4)), strikeOn: pick(['root', 'root', 'every']) };
   return a;
 }
 

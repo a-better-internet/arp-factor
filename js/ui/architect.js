@@ -245,13 +245,36 @@ export function buildArchitecture(root, api) {
   live.recInfo = recInfo;
   live.recFiles = recFiles;
 
+  // what the grid is doing to each module, shown on the module itself
+  const gridLine = (cardEl) => { const p = h('p', { class: 'card__live card__live--grid', text: '' }); cardEl.append(p); return p; };
+  live.gridGens = gridLine(genCard);
+  live.gridLoop = gridLine(loopCard);
+  live.gridHarm = gridLine(timbreCard);
+
   root.append(genCard, multCard, loopCard, timbreCard, homeoCard, outCard, logicCard, reelCard);
 
   return {
     sync() { for (const s of syncs) s(); },
     live,
     update(frame) {
-      for (let i = 0; i < 4; i++) live[`gen${i}`].textContent = `${fmt.hz(frame.gens[i])}`;
+      const NN = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+      const note = (f) => { const m = Math.round(69 + 12 * Math.log2(f / 440)); return `${NN[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`; };
+      for (let i = 0; i < 4; i++) live[`gen${i}`].textContent = `${fmt.hz(frame.gens[i])} · ${note(frame.gens[i])}`;
+      const G = getArch().grid, g = frame.grid;
+      if (G && g && g.length > 27) {
+        const on = G.on && g[16] > 0.02;
+        const beat = 60 / G.bpm;
+        const ratio = (r) => { for (let q = 1; q <= 8; q++) { const n = Math.round(r * q); if (Math.abs(n / q - r) < 0.004) return `${n}:${q}`; } return `×${r.toFixed(3)}`; };
+        live.gridGens.textContent = on && G.inform.tune > 0
+          ? `Grid: ${Math.round(g[23] * 100)}% settled onto the ${G.chord} chord${G.key < 0 ? ', on the web’s own fundamental' : ''}.`
+          : 'Grid: the generators are free of the chord.';
+        live.gridLoop.textContent = on && G.inform.tape
+          ? `Grid: tape in time, ${fmt.sec(g[24])} = ${+(g[24] / beat).toFixed(2)} beats at ${Math.round(G.bpm)} BPM.${G.inform.strike > 0 ? ' Steps pluck chord tones into the loop.' : ''}`
+          : `Grid: tape free at ${fmt.sec(g[24])}.${on && G.inform.strike > 0 ? ' Steps pluck chord tones into the loop.' : ''}`;
+        live.gridHarm.textContent = on && G.inform.harm !== 'off'
+          ? `Grid: the harmonizer sings ${G.inform.harm === 'step' ? 'the voices as they move' : 'the chord'}, now ${ratio(g[25])} and ${ratio(g[26])}.`
+          : 'Grid: the harmonizer keeps its own intervals.';
+      }
       const st = frame.stat;
       if (st.length > 21) {
         const moved = Math.abs(st[15]) + Math.abs(st[16]) + Math.abs(st[17]) > 0.1;
