@@ -1,0 +1,568 @@
+#!/usr/bin/env node
+/*
+ * Offline renderer and inspector for the signal engine. Runs the AudioWorklet
+ * processor in Node with a minimal stand-in for the worklet scope, writes a
+ * WAV file and reports how the system regulated itself:
+ *
+ *   - breathing: how regular the homeostat's breaths were, per window
+ *   - headroom:  how often the feedback gain sat at its ceiling
+ *   - clicks:    sample discontinuities, with what was happening at the time
+ *   - motion:    how fast and how far pitch, tape speed, level and brightness move
+ *   - pulse:     whether the sound throbs, and whether the throb speeds up and slows down
+ *   - levels:    sample and true peak of the output, and how hard the limiter,
+ *                output governor and tape level control had to work
+ *
+ *   node tools/render.mjs --seconds 120 --preset "Iron Weather" --out iron.wav
+ *   node tools/render.mjs --derive andromeda --seconds 600 --out a.wav
+ *   node tools/render.mjs --at 60:bias=0.4 --at 90:perturb
+ *   node tools/render.mjs --inject 20      check that the click detector works
+ *
+ * Options
+ *   --seconds N      length to render (default 60)
+ *   --sr N           sample rate (default 48000)
+ *   --preset NAME    start from a preset (default: the first one)
+ *   --derive WORD    start from an architecture derived from WORD
+ *   --out FILE       write a 24-bit stereo WAV (streamed; past 4 GB it continues in FILE-part2.wav ...)
+ *   --bands FILE     write the band history (one JSON row per frame)
+ *   --every N        print a status line every N seconds (default 10)
+ *   --window N       breathing report window in seconds (default 600)
+ *   --at T:ACTION    at T seconds: key=value sets a helm value, perturb strikes,
+ *                    arch:PATH=VALUE changes the architecture
+ *   --set PATH=VAL   override one architecture value, e.g. --set loop.smear=0.2
+ *   --pin EYE:DEST:A place a matrix pin by code, e.g. --pin LOW:WARM:0.6
+ *                    (an amount of 0 removes the pin)
+ *   --ratio N        click threshold against the local level (default 9)
+ *   --inject N       add N synthetic steps to the analysed signal (not the WAV)
+ *   --hold R:HZ:SEC  put a raw sine of HZ, SEC long, on reel R (1-4) as held tape;
+ *                    its ends don't line up, so its loop point is a hard seam
+ *   --env FILE       write the output envelope (100 Hz, dB) for further analysis
+ *   --quiet          only print the summary
+ */
+import { writeFileSync, openSync, writeSync, closeSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
+import { PRESETS, SOURCES, DESTS, deriveArch, eraName, setPath } from '../js/state.js';
+
+const args = process.argv.slice(2);
+const opt = {
+  seconds: 60, sr: 48000, preset: PRESETS[0].name, derive: null, out: null, bands: null,
+  every: 10, window: 600, at: [], set: [], pin: [], hold: [], ratio: 9, inject: 0, quiet: false, env: null,
+};
+for (let i = 0; i < args.length; i++) {
+  const k = args[i].replace(/^--/, '');
+  const v = args[i + 1];
+  if (k === 'quiet') { opt.quiet = true; continue; }
+  if (k === 'at' || k === 'set' || k === 'hold' || k === 'pin') { opt[k].push(v); i++; continue; }
+  if (k in opt) { opt[k] = ['seconds', 'sr', 'every', 'window', 'ratio', 'inject'].includes(k) ? Number(v) : v; i++; }
+}
+const say = (...a) => { if (!opt.quiet) console.log(...a); };
+
+const posted = [];
+globalThis.sampleRate = opt.sr;
+globalThis.currentTime = 0;
+globalThis.AudioWorkletProcessor = class {
+  constructor() { this.port = { postMessage: (m) => posted.push(m), onmessage: null }; }
+};
+let Processor = null;
+globalThis.registerProcessor = (_name, cls) => { Processor = cls; };
+await import('../js/dsp/processor.js');
+
+let arch;
+if (opt.derive) arch = deriveArch(opt.derive);
+else {
+  const p = PRESETS.find((x) => x.name.toLowerCase() === String(opt.preset).toLowerCase());
+  if (!p) { console.error(`Unknown preset. Choose one of: ${PRESETS.map((x) => x.name).join(', ')}`); process.exit(1); }
+  arch = p.build();
+}
+for (const s of opt.set) {
+  const [path, val] = s.split('=');
+  setPath(arch, path, Number(val));
+}
+for (const p of opt.pin) {
+  const [eye, dest, amt] = p.split(':');
+  const i = SOURCES.findIndex((x) => x.code === eye), j = DESTS.findIndex((x) => x.code === dest);
+  if (i < 0 || j < 0) { console.error(`Unknown pin ${p}. Eyes: ${SOURCES.map((x) => x.code).join(' ')}. Destinations: ${DESTS.map((x) => x.code).join(' ')}.`); process.exit(1); }
+  arch.matrix = arch.matrix.filter((m) => !(m[0] === i && m[1] === j));
+  if (Number(amt)) arch.matrix.push([i, j, Number(amt)]);
+}
+
+const proc = new Processor({ processorOptions: { arch } });
+const send = (m) => proc.port.onmessage({ data: m });
+for (const h of opt.hold) {
+  const [r, hz, sec] = h.split(':').map(Number);
+  const data = new Float32Array(Math.round(sec * opt.sr));
+  for (let i = 0; i < data.length; i++) data[i] = 0.6 * Math.sin((2 * Math.PI * hz * i) / opt.sr);
+  arch.reels[r - 1].mode = 'tape';
+  send({ type: 'arch', arch });
+  send({ type: 'reel-load', reel: r - 1, data });
+}
+posted.length = 0;
+send({ type: 'engage' });
+
+const steer = opt.at.map((s) => {
+  const i = s.indexOf(':');
+  return { t: Number(s.slice(0, i)), action: s.slice(i + 1), done: false };
+}).sort((a, b) => a.t - b.t);
+
+const N = 128;
+const SR = opt.sr;
+const total = Math.ceil(opt.seconds * SR / N);
+/* 24-bit WAV, streamed to disk so long renders never sit in memory. */
+const wav = opt.out ? (() => {
+  const MAX = 3_900_000_000;
+  const w = { part: 1, fd: null, bytes: 0, buf: Buffer.alloc(SR * 6), fill: 0, paths: [] };
+  const header = (dataBytes) => {
+    const h = Buffer.alloc(44);
+    h.write('RIFF', 0); h.writeUInt32LE(36 + dataBytes, 4); h.write('WAVE', 8);
+    h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 6, 28); h.writeUInt16LE(6, 32); h.writeUInt16LE(24, 34);
+    h.write('data', 36); h.writeUInt32LE(dataBytes, 40);
+    return h;
+  };
+  w.open = () => {
+    const path = w.part === 1 ? opt.out : opt.out.replace(/(\.wav)?$/i, `-part${w.part}.wav`);
+    w.fd = openSync(path, 'w');
+    writeSync(w.fd, header(0));
+    w.bytes = 0;
+    w.paths.push(path);
+  };
+  w.flush = () => {
+    if (!w.fill) return;
+    writeSync(w.fd, w.buf, 0, w.fill);
+    w.bytes += w.fill;
+    w.fill = 0;
+  };
+  w.close = () => {
+    w.flush();
+    writeSync(w.fd, header(w.bytes), 0, 44, 0);
+    closeSync(w.fd);
+  };
+  w.frame = (l, r) => {
+    if (w.fill + 6 > w.buf.length) w.flush();
+    if (w.bytes + w.fill + 6 > MAX) { w.close(); w.part++; w.open(); }
+    for (const v of [l, r]) {
+      const q = Math.max(-8388608, Math.min(8388607, Math.round(Math.max(-1, Math.min(1, v)) * 8388607)));
+      w.buf[w.fill++] = q & 255; w.buf[w.fill++] = (q >> 8) & 255; w.buf[w.fill++] = (q >> 16) & 255;
+    }
+  };
+  w.open();
+  return w;
+})() : null;
+// Envelope at 100 Hz for the pulse report, and the engine's tempo-like quantities once a second.
+const ENV_HOP = Math.round(SR / 100);
+const env = new Float32Array(Math.ceil((total * N) / ENV_HOP) + 1);
+let envAcc = 0, envN = 0, envI = 0;
+const tempo = [];
+// Levels: true peak by 4x windowed-sinc interpolation (as the engine's limiter detects it).
+const TPH = (() => {
+  const T = 16, h = [];
+  for (let p = 1; p <= 3; p++) {
+    const row = []; let sum = 0;
+    for (let k = 0; k < T; k++) { const t = k - (T / 2 - 1) - p / 4; const v = (t === 0 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t)) * (0.5 + 0.5 * Math.cos((Math.PI * t) / (T / 2 + 1))); row.push(v); sum += v; }
+    h.push(row.map((v) => v / sum));
+  }
+  return h;
+})();
+const tpHist = [new Float64Array(32), new Float64Array(32)];
+let tpI = 0, truePeak = 0, samplePeak = 0;
+const lev = { n: 0, lim1: 0, lim3: 0, gov1: 0, gov3: 0, alc1: 0, alc3: 0, limMin: 1, govMin: 1, alcMin: 1 };
+const outL = new Float32Array(N), outR = new Float32Array(N);
+const outputs = [[outL, outR]];
+const inputs = [[]];
+let peak = 0, sumSq = 0, count = 0, nanCount = 0, clipCount = 0;
+const bandRows = [];
+let lastFrame = null;
+
+/* ---- what was happening: events the clicks can be attributed to ---- */
+const events = [];
+const note = (t, kind) => { events.push({ t, kind }); };
+const prevPos = new Float64Array(4);
+const prevW = new Int32Array(4);
+const prevLen = new Int32Array(4);
+let prevTape = proc.tapeS;
+const prevGate = new Uint8Array(4);
+let prevInhale = 0;
+
+/* ---- click detector ----
+ * A click is a second-difference spike that stands far above the local level
+ * and is isolated: nothing else within 1.5 ms comes close to it, apart from
+ * its immediate neighbours (a step shows as a +/- pair). Dense bright sound
+ * has many large second differences and is not counted. */
+const LA = Math.round(0.0015 * SR);           // look-ahead and look-behind
+const RING = 4096;
+const det = [0, 1].map(() => ({ x1: 0, x2: 0, e2: 1e-6, d: new Float32Array(RING), ref: new Float32Array(RING) }));
+const kE = 1 / (0.004 * SR);
+const clicks = [];
+let lastClickN = -1e9;
+function judge(c, m) {
+  const d = det[c];
+  const v = Math.abs(d.d[m % RING]);
+  if (v < 0.012 || v < opt.ratio * d.ref[m % RING]) return;
+  for (let j = m - LA; j <= m + LA; j++) {
+    if (Math.abs(j - m) <= 1) continue;
+    if (Math.abs(d.d[((j % RING) + RING) % RING]) > 0.5 * v) return;
+  }
+  if (m - lastClickN < SR * 0.02) return;
+  lastClickN = m;
+  clicks.push({ t: m / SR, mag: v, ratio: v / Math.max(1e-9, d.ref[m % RING]), ch: c });
+}
+const injectAt = new Set();
+if (opt.inject > 0) {
+  for (let i = 0; i < opt.inject; i++) injectAt.add(Math.round(((i + 0.5) / opt.inject) * (opt.seconds - 2) * SR + SR));
+}
+let injectLevel = 0;
+let injected = 0, injectFound = 0;
+
+/* ---- breathing and headroom ---- */
+const breathT = [];
+let fbPinned = 0, frames = 0;
+const trims = [];
+const metab = [];
+const tempers = [];
+const sec = [];          // the system averaged over each second, for the motion report
+let nextSec = 1;
+let acc = { n: 0, out: 0, cent: 0 };
+const minutes = [];      // the band profile averaged over each minute, for the evolution report
+let minAcc = null, minN = 0, nextMin = 60;
+
+say(`Rendering "${arch.name}" for ${opt.seconds}s at ${SR} Hz`);
+const t0 = performance.now();
+for (let b = 0; b < total; b++) {
+  const tSec = b * N / SR;
+  for (const e of steer) {
+    if (e.done || tSec < e.t) continue;
+    e.done = true;
+    if (e.action === 'perturb') { send({ type: 'perturb' }); note(tSec, 'perturb'); }
+    else if (e.action.startsWith('arch:')) {
+      const [path, val] = e.action.slice(5).split('=');
+      setPath(arch, path, Number.isNaN(Number(val)) ? val : Number(val));
+      send({ type: 'arch', arch: structuredClone(arch) });
+      note(tSec, `arch ${path}`);
+    } else {
+      const [key, val] = e.action.split('=');
+      arch.helm[key] = Number(val);
+      send({ type: 'helm', helm: arch.helm });
+      note(tSec, `helm ${key}`);
+    }
+    say(`  ${tSec.toFixed(1)}s  steer: ${e.action}`);
+  }
+  globalThis.currentTime = tSec;
+  proc.process(inputs, outputs);
+
+  // instrumentation from the engine's state
+  for (let r = 0; r < 4; r++) {
+    const len = proc.reelLen[r], pos = proc.reelPos[r], w = proc.reelW[r];
+    if (len !== prevLen[r]) note(tSec, `reel ${r + 1} length or mode`);
+    else if (len > 0) {
+      if (Math.abs(pos - prevPos[r]) > len / 2) note(tSec, `reel ${r + 1} loop point`);
+      const a = (prevPos[r] - prevW[r]) / len, c = (pos - w) / len;
+      if (Math.floor(a) !== Math.floor(c) && Math.abs(pos - prevPos[r]) < len / 2) note(tSec, `reel ${r + 1} crosses record head`);
+    }
+    prevPos[r] = pos; prevW[r] = w; prevLen[r] = len;
+  }
+  const tapeRate = Math.abs(proc.tapeS - prevTape) * SR / N;
+  if (tapeRate > 0.25) note(tSec, 'tape lurching (pitch bend over 25%)');
+  else if (tapeRate > 0.05) note(tSec, 'tape gliding (pitch bend 5–25%)');
+  prevTape = proc.tapeS;
+  if (proc.limG < 0.75) note(tSec, 'limiter working hard');
+  if (Math.max(proc.P[4], proc.P[5], proc.P[6], proc.P[7]) > 1.1) note(tSec, 'sharp generator edges (fold above 1.1)');
+  // a bend this sharp in the generators' own product is their waveform (fold
+  // or the shaper), already there before anything downstream touches it
+  if (proc.xEdge > 0.25) note(tSec, 'sharp generator peak');
+  // the grid's own voices: a sawtooth or square has an edge every cycle, by design
+  if (proc.vWave >= 2 && proc.P[47] > 0.005) note(tSec, 'grid voice waveform edges (saw or square)');
+  proc.xEdge = 0;
+
+  {
+    const lg = proc.limG, gg = proc.govG ?? 1, ag = proc.alcG ?? 1;
+    lev.n++;
+    if (lg < 0.891) lev.lim1++; if (lg < 0.708) lev.lim3++; if (gg < 0.891) lev.gov1++; if (gg < 0.708) lev.gov3++;
+    if (ag < 0.891) lev.alc1++; if (ag < 0.708) lev.alc3++;
+    lev.limMin = Math.min(lev.limMin, lg); lev.govMin = Math.min(lev.govMin, gg); lev.alcMin = Math.min(lev.alcMin, ag);
+  }
+  if ((b * N) % SR < N) {
+    tempo.push({ t: b * N / SR, tape: proc.tapeS, shL: proc.P[16], shR: proc.P[17], reels: [0, 1, 2, 3].map((r) => (proc.reelLen[r] > 0 ? proc.P[27 + r] : NaN)), sync: proc.P[8], gens: [0, 1, 2, 3].map((g) => proc.P[g]) });
+  }
+  for (let i = 0; i < N; i++) {
+    const n = b * N + i;
+    { const mono = (outL[i] + outR[i]) * 0.5; envAcc += mono * mono; if (++envN === ENV_HOP) { env[envI++] = Math.sqrt(envAcc / ENV_HOP); envAcc = 0; envN = 0; } }
+    const l = outL[i], r = outR[i];
+    if (l !== l || r !== r) nanCount++;
+    const al = Math.abs(l), ar = Math.abs(r);
+    if (al > peak) peak = al;
+    if (ar > peak) peak = ar;
+    if (al > 0.999 || ar > 0.999) clipCount++;
+    sumSq += l * l + r * r; count += 2;
+    {
+      const xs2 = [l, r];
+      for (let c = 0; c < 2; c++) {
+        const hb = tpHist[c];
+        hb[tpI] = xs2[c]; hb[tpI + 16] = xs2[c];
+        const a0 = Math.abs(xs2[c]);
+        if (a0 > samplePeak) samplePeak = a0;
+        if (a0 > 0.2 || truePeak > 0.2) {
+          for (let p = 0; p < 3; p++) {
+            let y = 0;
+            for (let k = 0; k < 16; k++) y += TPH[p][k] * hb[tpI + 1 + k];
+            const a = Math.abs(y);
+            if (a > truePeak) truePeak = a;
+          }
+        }
+      }
+      tpI = (tpI + 1) & 15;
+    }
+    if (wav) {
+      wav.frame(l, r);
+    }
+    if (injectAt.has(n)) { injectLevel = injectLevel ? 0 : 0.04; injected++; injectAt.delete(n); note(n / SR, 'synthetic step'); }
+    const xs = [l + injectLevel, r + injectLevel];
+    for (let c = 0; c < 2; c++) {
+      const d = det[c];
+      const x = xs[c];
+      const d2 = x - 2 * d.x1 + d.x2;
+      d.d[n % RING] = d2;
+      d.ref[n % RING] = Math.sqrt(d.e2);
+      d.e2 += (d2 * d2 - d.e2) * kE;
+      d.x2 = d.x1; d.x1 = x;
+      if (n > SR * 0.5 + LA) judge(c, n - LA);
+    }
+  }
+
+  while (posted.length) {
+    const m = posted.shift();
+    if (m.type === 'metab') { metab.push(m); continue; }
+    if (m.type === 'temper') { tempers.push(m); continue; }
+    if (m.type !== 'frame') continue;
+    lastFrame = m;
+    frames++;
+    acc.n++; acc.out += m.stat[1]; acc.cent += Math.log2(Math.max(20, m.stat[9]));
+    if (!minAcc) minAcc = new Float64Array(m.bands.length + 1);
+    for (let k = 0; k < m.bands.length; k++) minAcc[k] += m.bands[k];
+    minAcc[m.bands.length] += Math.log2(Math.max(20, m.stat[9]));
+    minN++;
+    if (m.el >= nextMin) {
+      nextMin += 60;
+      minutes.push(Array.from(minAcc, (v) => v / minN));
+      minAcc.fill(0); minN = 0;
+    }
+    if (m.el >= nextSec) {
+      nextSec = Math.floor(m.el) + 1;
+      sec.push({ t: m.el, gens: Array.from(m.gens), tape: m.stat[5], shift: m.stat[6], out: acc.out / acc.n, cent: 2 ** (acc.cent / acc.n), warm: m.stat.length > 24 ? m.stat[24] : 0 });
+      acc = { n: 0, out: 0, cent: 0 };
+    }
+    const s = m.stat;
+    if (s[4] >= proc.fbCap * 0.98) fbPinned++;
+    trims.push(s[2]);
+    if (s[14] > prevInhale) breathT.push(m.el);
+    prevInhale = s[14];
+    for (let g = 0; g < 4; g++) { if (m.gateState[g] !== prevGate[g]) note(m.el, `gate L${g + 1}`); prevGate[g] = m.gateState[g]; }
+    if (opt.bands) bandRows.push(JSON.stringify({ t: +m.el.toFixed(2), b: Array.from(m.bands, (x) => +x.toFixed(3)), c: Array.from(m.clamp, (x) => +x.toFixed(3)), s: Array.from(m.stat, (x) => +x.toFixed(3)), g: Array.from(m.gateState) }));
+  }
+  if ((b + 1) % Math.round(opt.every * SR / N) === 0 && lastFrame) {
+    const f = lastFrame;
+    const rms = 10 * Math.log10(sumSq / Math.max(1, count) + 1e-12);
+    const [loopDb, , trim, fastG, fb, tape, shift, clampAmt, , cent] = f.stat;
+    const m = f.stat.length > 17 ? `  metab sp ${f.stat[15].toFixed(1)} dp ${f.stat[16].toFixed(1)} cl ${f.stat[17].toFixed(1)} P ${f.stat[18].toFixed(2)} reg ${f.stat[19].toFixed(2)}` : '';
+    say(
+      `  ${String(Math.round((b + 1) * N / SR)).padStart(5)}s  rms ${rms.toFixed(1).padStart(6)} dB  peak ${peak.toFixed(2)}  ` +
+      `loop ${loopDb.toFixed(1).padStart(6)}  trim ${trim.toFixed(1).padStart(6)}  fast ${fastG.toFixed(2)}  fb ${fb.toFixed(2)}  ` +
+      `tape ${tape.toFixed(2)}s  shift ${shift.toFixed(2)}  clamp ${clampAmt.toFixed(2)}  cent ${Math.round(cent)} Hz  ` +
+      `gates ${Array.from(f.gateState).join('')}${m}`,
+    );
+    peak = 0; sumSq = 0; count = 0;
+  }
+}
+const dt = (performance.now() - t0) / 1000;
+
+/* ---------- report ---------- */
+console.log(`\n"${arch.name}", ${opt.seconds}s, era ${arch.helm.era} (${eraName(arch.helm.era)}). Rendered at ${(opt.seconds / dt).toFixed(1)}x real time.`);
+console.log(`Signal: NaN samples ${nanCount}, samples at full scale ${clipCount}.`);
+
+const sorted = trims.slice().sort((a, b) => a - b);
+const q = (p) => (sorted.length ? sorted[Math.floor(p * (sorted.length - 1))] : 0);
+console.log(`Headroom: feedback at its ceiling ${((100 * fbPinned) / Math.max(1, frames)).toFixed(1)}% of the time. Trim median ${q(0.5).toFixed(1)} dB (10% ${q(0.1).toFixed(1)}, 90% ${q(0.9).toFixed(1)}).`);
+
+const rows = [];
+for (let w0 = 0; w0 < opt.seconds; w0 += opt.window) {
+  const ts = breathT.filter((t) => t >= w0 && t < w0 + opt.window);
+  const iv = [];
+  for (let i = 1; i < ts.length; i++) iv.push(ts[i] - ts[i - 1]);
+  if (iv.length < 2) { rows.push(`${String(w0).padStart(6)}s  ${ts.length} breaths`); continue; }
+  const mean = iv.reduce((a, b) => a + b, 0) / iv.length;
+  const sd = Math.sqrt(iv.reduce((a, b) => a + (b - mean) ** 2, 0) / iv.length);
+  rows.push(`${String(w0).padStart(6)}s  ${String(ts.length).padStart(3)} breaths, mean ${mean.toFixed(1).padStart(5)} s, variation ${((100 * sd) / mean).toFixed(0).padStart(3)}%`);
+}
+console.log(`Breathing (variation is the spread of breath intervals; low means clock-like):\n  ${rows.join('\n  ')}`);
+if (metab.length) {
+  console.log(`Metabolism shifted ${metab.length} times:`);
+  for (const m of metab.slice(0, 40)) console.log(`  ${m.t.toFixed(0).padStart(6)}s  ${m.reason}: setpoint ${m.sp.toFixed(1)} dB, depth ${m.depth.toFixed(1)} dB, ceiling ${m.ceil.toFixed(1)} dB, warmth ${m.warmth >= 0 ? '+' : ''}${(m.warmth ?? 0).toFixed(2)}`);
+}
+
+/* Colour: how warm the web ran (0 cold and metallic, 1 settled into one
+   harmonic series), and in what spells. */
+{
+  const W = sec.filter((x) => x.t > 30).map((x) => x.warm);
+  if (W.length > 10) {
+    const srt = W.slice().sort((a, b) => a - b);
+    const q = (p) => srt[Math.min(srt.length - 1, Math.floor(p * srt.length))];
+    const spells = [];
+    let on = false, t0 = 0;
+    for (let i = 0; i < W.length; i++) {
+      if (!on && W[i] > 0.6) { on = true; t0 = i; }
+      else if (on && W[i] < 0.5) { on = false; spells.push(i - t0); }
+    }
+    if (on) spells.push(W.length - t0);
+    const warmPct = (100 * W.filter((v) => v > 0.6).length) / W.length;
+    const coldPct = (100 * W.filter((v) => v < 0.2).length) / W.length;
+    console.log(`Colour: warmth ${q(0.1).toFixed(2)} / ${q(0.5).toFixed(2)} / ${q(0.9).toFixed(2)} (10th, median, 90th percentile); warm (above 0.6) ${warmPct.toFixed(0)}% of the time, cold (below 0.2) ${coldPct.toFixed(0)}%.`);
+    if (spells.length) console.log(`  ${spells.length} warm spell${spells.length > 1 ? 's' : ''}, ${spells.slice(0, 12).map((x) => `${x} s`).join(', ')}${spells.length > 12 ? ' …' : ''}`);
+    if (tempers.length) console.log(`  temper turned ${tempers.length} times: ${tempers.slice(0, 12).map((x) => `${x.t.toFixed(0)} s ${x.warmer ? 'warmer' : 'colder'} → ${x.target.toFixed(2)}`).join(', ')}${tempers.length > 12 ? ' …' : ''}`);
+  }
+}
+
+/* Motion: rates per second and ranges, skipping the first 30 s while the web wakes. */
+{
+  const S = sec.filter((x) => x.t > 30);
+  const pct = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); return a.length ? a[Math.floor(p * (a.length - 1))] : 0; };
+  const pitchRate = [], tapeBend = [], shiftRate = [], levelRate = [], brightRate = [];
+  let ranges = 0;
+  for (let g = 0; g < 4; g++) {
+    const c = S.map((x) => 1200 * Math.log2(x.gens[g]));
+    for (let i = 1; i < c.length; i++) pitchRate.push(Math.abs(c[i] - c[i - 1]));
+    ranges = Math.max(ranges, pct(c, 0.95) - pct(c, 0.05));
+  }
+  let big = 0;
+  for (let i = 1; i < S.length; i++) {
+    const dt = S[i].t - S[i - 1].t || 1;
+    tapeBend.push((100 * Math.abs(S[i].tape - S[i - 1].tape)) / dt);
+    shiftRate.push(Math.abs(S[i].shift - S[i - 1].shift) / dt);
+    const dl = Math.abs(S[i].out - S[i - 1].out) / dt;
+    const db = Math.abs(Math.log2(S[i].cent / S[i - 1].cent)) / dt;
+    levelRate.push(dl); brightRate.push(db);
+    const pr = Math.max(...[0, 1, 2, 3].map((g) => Math.abs(1200 * Math.log2(S[i].gens[g] / S[i - 1].gens[g]))));
+    if (dl > 2.5 || db > 0.25 || pr > 40 || (100 * Math.abs(S[i].tape - S[i - 1].tape)) / dt > 8) big++;
+  }
+  const lv = S.map((x) => x.out);
+  const swell = pct(lv, 0.95) - pct(lv, 0.05);
+  console.log(`Motion (one-second averages; 95th percentile of the change from second to second):`);
+  console.log(`  pitch      ${pct(pitchRate, 0.95).toFixed(1)} cents/s, widest generator range ${ranges.toFixed(0)} cents`);
+  console.log(`  tape bend  ${pct(tapeBend, 0.95).toFixed(2)}% speed change     shift ${pct(shiftRate, 0.95).toFixed(3)} Hz/s`);
+  console.log(`  level      ${pct(levelRate, 0.95).toFixed(2)} dB/s, swing ${swell.toFixed(1)} dB     brightness ${pct(brightRate, 0.95).toFixed(3)} oct/s`);
+  console.log(`  abrupt moves: ${big} (${((big / Math.max(1, S.length)) * 60).toFixed(1)} per minute)`);
+  // Evolution: how far the minute-long spectral picture moves over five minutes.
+  const M = minutes.slice(1);
+  if (M.length > 6) {
+    const nb = M[0].length - 1;
+    const moves = [];
+    for (let i = 0; i + 5 < M.length; i++) {
+      let d = 0;
+      for (let k = 0; k < nb; k++) d += Math.abs(M[i + 5][k] - M[i][k]);
+      moves.push((d / nb) * 54);
+    }
+    const cents = M.map((r) => r[nb]);
+    const drift = Math.max(...cents) - Math.min(...cents);
+    console.log(`  evolution: spectrum moves ${(moves.reduce((a, b) => a + b, 0) / moves.length).toFixed(2)} dB per band over five minutes; brightness wanders over ${drift.toFixed(2)} octaves`);
+  }
+}
+
+/* Pulse: the dominant amplitude throb in each 10 s window and how its rate drifts. */
+{
+  const W = 1000, dbs = [];
+  const pulses = [];
+  for (let w0 = 3000; w0 + W <= envI; w0 += W) {
+    const x = new Float64Array(W);
+    let m = 0;
+    for (let i = 0; i < W; i++) { x[i] = 20 * Math.log10(env[w0 + i] + 1e-6); m += x[i]; }
+    m /= W;
+    for (let i = 0; i < W; i++) x[i] = (x[i] - m) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (W - 1)));
+    // modulation spectrum from 0.2 to 12 Hz, 0.1 Hz resolution
+    let best = 0, bestF = 0;
+    const pw = [];
+    for (let f = 0.2; f <= 12; f += 0.1) {
+      let re = 0, im = 0;
+      for (let i = 0; i < W; i++) { const a = (2 * Math.PI * f * i) / 100; re += x[i] * Math.cos(a); im += x[i] * Math.sin(a); }
+      const p = re * re + im * im;
+      pw.push(p);
+      if (p > best) { best = p; bestF = f; }
+    }
+    const med = pw.slice().sort((a, b) => a - b)[Math.floor(pw.length / 2)];
+    pulses.push({ t: w0 / 100, f: bestF, clear: best / med, depth: Math.sqrt(best) / W });
+  }
+  const clear = pulses.filter((p) => p.clear > 25);
+  let ramps = 0, drift = [];
+  for (let i = 1; i < pulses.length; i++) {
+    const a = pulses[i - 1], b = pulses[i];
+    if (a.clear > 25 && b.clear > 25) {
+      const r = Math.abs(Math.log2(b.f / a.f));
+      drift.push(r);
+      if (r > 0.26 && r < 1.5) ramps++;
+    }
+  }
+  drift.sort((a, b) => a - b);
+  const rates = clear.map((p) => p.f).sort((a, b) => a - b);
+  console.log(`Pulse: a clear throb in ${clear.length} of ${pulses.length} ten-second windows` + (rates.length ? `, typically ${rates[Math.floor(rates.length / 2)].toFixed(1)} Hz (from ${rates[0].toFixed(1)} to ${rates[rates.length - 1].toFixed(1)})` : '') + `.`);
+  if (drift.length) console.log(`  throb rate drifts ${(100 * (2 ** drift[Math.floor(drift.length / 2)] - 1)).toFixed(0)}% between windows (median); ${ramps} windows where it sped up or slowed down by more than 20%.`);
+  const T = tempo.filter((x) => x.t > 30);
+  if (T.length > 2) {
+    const range = (arr) => { const v = arr.filter((x) => !Number.isNaN(x)); return v.length ? Math.max(...v) / Math.min(...v) : 1; };
+    const tapeR = range(T.map((x) => x.tape));
+    const reelR = Math.max(...[0, 1, 2, 3].map((r) => range(T.map((x) => Math.abs(x.reels[r])))));
+    const syncR = [Math.min(...T.map((x) => x.sync)), Math.max(...T.map((x) => x.sync))];
+    // the slowest beat between generator fundamentals: any +/- combination close to zero
+    let beatLo = Infinity, beatHi = 0;
+    const co = [];
+    for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) for (let c = -1; c <= 1; c++) for (let d = -1; d <= 1; d++) {
+      if ((a || b2 || c || d) && Math.abs(a) + Math.abs(b2) + Math.abs(c) + Math.abs(d) >= 2) co.push([a, b2, c, d]);
+    }
+    let bestCo = null, bestV = Infinity;
+    for (const k of co) { const v = Math.abs(k[0] * T[0].gens[0] + k[1] * T[0].gens[1] + k[2] * T[0].gens[2] + k[3] * T[0].gens[3]); if (v < bestV) { bestV = v; bestCo = k; } }
+    for (const x of T) { const v = Math.abs(bestCo[0] * x.gens[0] + bestCo[1] * x.gens[1] + bestCo[2] * x.gens[2] + bestCo[3] * x.gens[3]); beatLo = Math.min(beatLo, v); beatHi = Math.max(beatHi, v); }
+    const name = bestCo.map((v, i) => (v ? `${v > 0 ? '+' : '−'}G${i + 1}` : '')).join('');
+    const shL = T.map((x) => x.shL), shR = T.map((x) => x.shR);
+    const net = T.map((x) => (x.shL + x.shR) / 2);
+    console.log(`  tape period varies ×${tapeR.toFixed(2)}, reel speed ×${reelR.toFixed(2)}, coupling ${syncR[0].toFixed(3)}–${syncR[1].toFixed(3)}; slowest generator beat ${name} ranges ${beatLo.toFixed(2)}–${beatHi.toFixed(2)} Hz.`);
+    console.log(`  shift left ${Math.min(...shL).toFixed(2)} to ${Math.max(...shL).toFixed(2)} Hz, right ${Math.min(...shR).toFixed(2)} to ${Math.max(...shR).toFixed(2)} Hz; net spiral ${Math.min(...net).toFixed(2)} to ${Math.max(...net).toFixed(2)} Hz per pass.`);
+  }
+}
+
+{
+  const db = (v) => (20 * Math.log10(v + 1e-12)).toFixed(2);
+  const pc = (x) => ((100 * x) / Math.max(1, lev.n)).toFixed(2);
+  console.log(`Levels: sample peak ${db(samplePeak)} dBFS, true peak ${db(truePeak)} dBTP (output after the Level knob).`);
+  console.log(`  limiter: over 1 dB ${pc(lev.lim1)}%, over 3 dB ${pc(lev.lim3)}% of the time, deepest ${db(lev.limMin)} dB`);
+  console.log(`  output governor: over 1 dB ${pc(lev.gov1)}%, over 3 dB ${pc(lev.gov3)}%, deepest ${db(lev.govMin)} dB · tape level control: over 1 dB ${pc(lev.alc1)}%, deepest ${db(lev.alcMin)} dB`);
+}
+
+const near = (t) => {
+  const hits = new Set();
+  for (const e of events) if (Math.abs(e.t - t) < 0.008) hits.add(e.kind);
+  return [...hits].join(', ') || 'nothing logged';
+};
+for (const c of clicks) if (c.t !== undefined && near(c.t).includes('synthetic step')) injectFound++;
+const flagged = clicks.filter((c) => !near(c.t).includes('synthetic step'));
+const isEdge = (c) => near(c.t).includes('sharp generator') || near(c.t).includes('grid voice waveform');
+const edges = flagged.filter(isEdge);
+const real = flagged.filter((c) => !isEdge(c));
+console.log(`Clicks: ${real.length} found (${((real.length / opt.seconds) * 60).toFixed(2)} per minute) at ratio ${opt.ratio}.`);
+if (edges.length) console.log(`  Not counted: ${edges.length} sharp edges or peaks in a waveform itself (the generators' fold or shaper, or the grid's saw or square voices), present before any processing (timbre, not a fault).`);
+if (arch.grid && arch.grid.on) {
+  const G = arch.grid;
+  console.log(`Grid: ${proc.gSteps} steps (${(proc.gSteps / opt.seconds).toFixed(2)} per second) · clock ${G.clock}${G.clock === 'tempo' ? ` ${G.bpm} BPM, ${G.subdiv} per beat` : ''} · ${G.chord}, ${G.mode} · slice ${Math.round(G.slice.mix * 100)}% ${G.slice.mode} · echo ${Math.round(G.echo.mix * 100)}% · texture ${G.tex.src} · pan ${Math.round(G.pan.depth * 100)}% ${G.pattern || G.pan.pattern}.`);
+}
+if (opt.inject) console.log(`  Detector check: ${injectFound} of ${injected} synthetic steps found.`);
+const byCause = new Map();
+for (const c of real) { const k = near(c.t); byCause.set(k, (byCause.get(k) || 0) + 1); }
+for (const [k, v] of [...byCause.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) console.log(`  ${String(v).padStart(4)} near: ${k}`);
+for (const c of real.sort((a, b) => b.ratio - a.ratio).slice(0, 6)) console.log(`  worst ${c.t.toFixed(3)}s  step ${c.mag.toFixed(3)}  ${c.ratio.toFixed(0)}x local  near: ${near(c.t)}`);
+
+if (wav) {
+  wav.close();
+  console.log(`Wrote ${wav.paths.join(', ')} (24-bit, ${SR} Hz)`);
+}
+if (opt.env) {
+  writeFileSync(opt.env, Buffer.from(Float32Array.from(env.subarray(0, envI), (v) => 20 * Math.log10(v + 1e-6)).buffer));
+  console.log(`Wrote ${opt.env}`);
+}
+if (opt.bands) {
+  writeFileSync(opt.bands, bandRows.join('\n'));
+  console.log(`Wrote ${opt.bands}`);
+}
